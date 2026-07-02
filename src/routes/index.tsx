@@ -17,6 +17,9 @@ function HomePage() {
       <p>
         <Link to="/linked">Linked multi-pane view →</Link>
       </p>
+      <p>
+        <Link to="/surface-3d">3D surface view →</Link>
+      </p>
       <GraphCanvas />
     </div>
   );

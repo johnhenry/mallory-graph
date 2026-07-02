@@ -29,3 +29,24 @@ export function cellIds(cellId: string) {
 }
 
 export type CellIds = ReturnType<typeof cellIds>;
+
+/**
+ * Cell-id namespacing for a 3D surface pane (Graph3DCanvas.tsx) -- a
+ * deliberately smaller set than `cellIds`: no `point`/`exact`/`scatter`/
+ * `derivative`/`structure`, since dragging a curve point, exact-mode
+ * readouts, finite-structure scatter, and the derivative accordion are all
+ * single-axis-variable 2D concepts that don't have a 3D analog here yet.
+ */
+export function cellIds3D(cellId: string) {
+  return {
+    expr: `expr3d:${cellId}`,
+    freeVars: `freeVars3d:${cellId}`,
+    params: `params3d:${cellId}`,
+    mesh: `mesh3d:${cellId}`,
+    timelineDuration: `timelineDuration3d:${cellId}`,
+    param: (name: string) => `param3d:${cellId}:${name}`,
+    track: (name: string) => `track3d:${cellId}:${name}`,
+  };
+}
+
+export type CellIds3D = ReturnType<typeof cellIds3D>;

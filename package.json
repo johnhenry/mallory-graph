@@ -16,12 +16,14 @@
     "manim-js": "github:johnhenry/manim-js#17175b6e907b2cca08034eb1b576575b4be23470",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "srvx": "^0.10.0"
+    "srvx": "^0.10.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.10",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^4.3.4",
     "patch-package": "^8.0.0",
     "typescript": "^5.7.2",
