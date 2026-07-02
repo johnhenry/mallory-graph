@@ -1,6 +1,7 @@
-import { Rational, Symbolic, type Path2D } from "mallory-ts";
+import { Rational, Symbolic, type DifferentiationStep, type Expr, type Path2D } from "mallory-ts";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { exprToLatex } from "../lib/expr-to-latex.ts";
 import { integersModuloStructure } from "../lib/finite-structure.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { DEFAULT_GRAPH_STATE } from "../lib/graph-state.ts";
@@ -9,6 +10,7 @@ import { evaluateExprAsRational } from "../lib/rational-eval.ts";
 import { drawPath, drawPoint, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
+import { TexSpan } from "./TexSpan.tsx";
 import { useCell } from "../lib/use-cell.ts";
 import { toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
 
@@ -35,11 +37,17 @@ const POINT_CELL = `point:${CELL_ID}`;
 const EXACT_CELL = `exact:${CELL_ID}`;
 const STRUCTURE_CELL = `structure:${CELL_ID}`;
 const SCATTER_CELL = `scatter:${CELL_ID}`;
+const DERIVATIVE_CELL = `derivative:${CELL_ID}`;
 const paramCellId = (name: string) => `param:${CELL_ID}:${name}`;
 
 interface CurvePoint {
   x: number;
   y: number;
+}
+
+interface Derivative {
+  steps: DifferentiationStep[];
+  result: Expr;
 }
 
 /**
@@ -131,6 +139,17 @@ function useExpressionGraph(source: string, viewport: Viewport): CellGraph {
       }
     });
 
+    // "Show steps" accordion: derivative of the current expression w.r.t. the
+    // axis variable, plus a bottom-up trace of every rule applied.
+    graph.define(DERIVATIVE_CELL, (): Derivative | null => {
+      try {
+        const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(EXPR_CELL)));
+        return Symbolic.differentiateSteps(expr, AXIS_VARIABLE);
+      } catch {
+        return null;
+      }
+    });
+
     graph.set(STRUCTURE_CELL, null as number | null);
 
     // Structure selector: when set to a modulus, plots a finite scatter (all
@@ -160,10 +179,12 @@ export function GraphCanvas() {
   const freeVars = useCell<string[]>(graph, FREE_VARS_CELL);
   const modulus = useCell<number | null>(graph, STRUCTURE_CELL);
   const scatter = useCell<ScatterPoint[] | null>(graph, SCATTER_CELL);
+  const derivative = useCell<Derivative | null>(graph, DERIVATIVE_CELL);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [source, setSource] = useState(DEFAULT_GRAPH_STATE.cells[0].source);
   const [mode, setMode] = useState<"float" | "exact">("float");
+  const [showSteps, setShowSteps] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -263,6 +284,23 @@ export function GraphCanvas() {
       {modulus === null && point && (
         <div>
           y = {mode === "exact" ? exact ?? `${point.y.toFixed(4)} (not exact)` : point.y.toFixed(4)}
+        </div>
+      )}
+      {modulus === null && derivative && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <button type="button" onClick={() => setShowSteps((v) => !v)}>
+            {showSteps ? "▾" : "▸"} Show steps: dy/dx = <TexSpan tex={exprToLatex(derivative.result)} />
+          </button>
+          {showSteps && (
+            <ol>
+              {derivative.steps.map((step, i) => (
+                <li key={i}>
+                  <strong>{step.rule}</strong>: d/dx[<TexSpan tex={exprToLatex(step.input)} />] ={" "}
+                  <TexSpan tex={exprToLatex(step.output)} />
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       )}
     </div>
