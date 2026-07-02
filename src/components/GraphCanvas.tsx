@@ -11,6 +11,7 @@ import { evaluateExprAsRational } from "../lib/rational-eval.ts";
 import { drawPath, drawPoint, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
+import { interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/timeline.ts";
 import { TexSpan } from "./TexSpan.tsx";
 import { useCell } from "../lib/use-cell.ts";
 import { toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
@@ -39,7 +40,10 @@ const EXACT_CELL = `exact:${CELL_ID}`;
 const STRUCTURE_CELL = `structure:${CELL_ID}`;
 const SCATTER_CELL = `scatter:${CELL_ID}`;
 const DERIVATIVE_CELL = `derivative:${CELL_ID}`;
+const TIME_CELL = `time:${CELL_ID}`;
+const TIMELINE_DURATION_CELL = `timelineDuration:${CELL_ID}`;
 const paramCellId = (name: string) => `param:${CELL_ID}:${name}`;
+const trackCellId = (name: string) => `track:${CELL_ID}:${name}`;
 
 interface CurvePoint {
   x: number;
@@ -166,6 +170,17 @@ function useExpressionGraph(source: string, viewport: Viewport): CellGraph {
       }
     });
 
+    // Parameter timeline: a param's value cell is either a plain `set` cell
+    // (static, dragged manually) or, once SliderControl enables a keyframe
+    // track for it, redefined to interpolate from that track + TIME_CELL --
+    // the same "cell reads another cell's current value" mechanism that
+    // powers sliders and direct manipulation elsewhere in this graph.
+    graph.set(TIME_CELL, 0);
+    graph.define(TIMELINE_DURATION_CELL, () => {
+      const names = graph.get<string[]>(FREE_VARS_CELL);
+      return timelineDuration(names.map((name) => graph.get<Keyframe[] | undefined>(trackCellId(name))));
+    });
+
     ref.current = graph;
   }
   return ref.current;
@@ -181,11 +196,16 @@ export function GraphCanvas() {
   const modulus = useCell<number | null>(graph, STRUCTURE_CELL);
   const scatter = useCell<ScatterPoint[] | null>(graph, SCATTER_CELL);
   const derivative = useCell<Derivative | null>(graph, DERIVATIVE_CELL);
+  const time = useCell<number>(graph, TIME_CELL);
+  const duration = useCell<number>(graph, TIMELINE_DURATION_CELL);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [source, setSource] = useState(DEFAULT_GRAPH_STATE.cells[0].source);
   const [mode, setMode] = useState<"float" | "exact">("float");
   const [showSteps, setShowSteps] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [loop, setLoop] = useState(true);
+  const [speed, setSpeed] = useState(1);
 
   // Hydrate from the URL fragment (if any) once, on mount. Params/structure
   // are written before the source, so when the new source dirties
@@ -222,6 +242,30 @@ export function GraphCanvas() {
     syncUrl();
     return graph.subscribeAll(syncUrl);
   }, [graph, viewport, mode]);
+
+  // Timeline playback: advances TIME_CELL by real elapsed time (scaled by
+  // speed) every frame, looping back to 0 at `duration` or stopping there.
+  useEffect(() => {
+    if (!playing || duration <= 0) return;
+    let raf = 0;
+    let last = performance.now();
+    function tick(now: number) {
+      const dt = ((now - last) / 1000) * speed;
+      last = now;
+      let next = graph.get<number>(TIME_CELL) + dt;
+      if (next >= duration) {
+        if (loop) next %= duration;
+        else {
+          next = duration;
+          setPlaying(false);
+        }
+      }
+      graph.set(TIME_CELL, next);
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, loop, speed, duration, graph]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -280,6 +324,41 @@ export function GraphCanvas() {
           {freeVars.map((name) => (
             <SliderControl key={name} graph={graph} name={name} />
           ))}
+        </div>
+      )}
+      {duration > 0 && (
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0.5rem 0" }}>
+          <button type="button" onClick={() => setPlaying((p) => !p)}>
+            {playing ? "Pause" : "Play"}
+          </button>
+          <label>
+            <input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} /> Loop
+          </label>
+          <label>
+            Speed{" "}
+            <input
+              type="number"
+              value={speed}
+              min={0.1}
+              step={0.1}
+              style={{ width: "4ch" }}
+              onChange={(e) => setSpeed(Number(e.target.value))}
+            />
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={duration}
+            step={0.01}
+            value={Math.min(time, duration)}
+            onChange={(e) => {
+              setPlaying(false);
+              graph.set(TIME_CELL, Number(e.target.value));
+            }}
+          />
+          <span>
+            {time.toFixed(2)}s / {duration.toFixed(2)}s
+          </span>
         </div>
       )}
       <label style={{ display: "block", margin: "0.5rem 0" }}>
@@ -347,19 +426,89 @@ export function GraphCanvas() {
 
 function SliderControl({ graph, name }: { graph: CellGraph; name: string }) {
   const id = paramCellId(name);
+  const trackId = trackCellId(name);
   const value = useCell<number>(graph, id);
+  const track = useCell<Keyframe[] | undefined>(graph, trackId);
   const range = defaultSliderRange(name);
+  const animated = track != null && track.length > 0;
+
+  function toggleAnimated() {
+    if (animated) {
+      graph.set(id, value);
+      graph.set(trackId, undefined);
+    } else {
+      graph.set(trackId, [{ t: 0, value }, { t: 3, value: range.max }]);
+      graph.define(id, () => interpolateKeyframes(graph.get<Keyframe[]>(trackId), graph.get<number>(TIME_CELL)));
+    }
+  }
+
+  function updateKeyframe(i: number, patch: Partial<Keyframe>) {
+    if (!track) return;
+    const next = track.map((k, idx) => (idx === i ? { ...k, ...patch } : k)).sort((a, b) => a.t - b.t);
+    graph.set(trackId, next);
+  }
+
+  function addKeyframe() {
+    if (!track) return;
+    const lastT = track.length > 0 ? track[track.length - 1].t : 0;
+    graph.set(trackId, [...track, { t: lastT + 1, value: range.default }]);
+  }
+
+  function removeKeyframe(i: number) {
+    if (!track) return;
+    graph.set(trackId, track.filter((_, idx) => idx !== i));
+  }
+
   return (
-    <label style={{ display: "flex", flexDirection: "column", fontSize: "0.85rem" }}>
-      {name} = {value.toFixed(2)}
-      <input
-        type="range"
-        min={range.min}
-        max={range.max}
-        step={range.step}
-        value={value}
-        onChange={(e) => graph.set(id, Number(e.target.value))}
-      />
-    </label>
+    <div style={{ display: "flex", flexDirection: "column", fontSize: "0.85rem", border: "1px solid #eee", padding: "0.4rem" }}>
+      <label style={{ display: "flex", flexDirection: "column" }}>
+        {name} = {value.toFixed(2)}
+        <input
+          type="range"
+          min={range.min}
+          max={range.max}
+          step={range.step}
+          value={value}
+          disabled={animated}
+          onChange={(e) => graph.set(id, Number(e.target.value))}
+        />
+      </label>
+      <label>
+        <input type="checkbox" checked={animated} onChange={toggleAnimated} /> Animate
+      </label>
+      {animated && track && (
+        <div>
+          {track.map((k, i) => (
+            <div key={i} style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
+              <input
+                type="number"
+                aria-label={`keyframe ${i} time`}
+                value={k.t}
+                step={0.1}
+                style={{ width: "4ch" }}
+                onChange={(e) => updateKeyframe(i, { t: Number(e.target.value) })}
+              />
+              <span>s:</span>
+              <input
+                type="number"
+                aria-label={`keyframe ${i} value`}
+                value={k.value}
+                step={range.step}
+                style={{ width: "5ch" }}
+                onChange={(e) => updateKeyframe(i, { value: Number(e.target.value) })}
+              />
+              {track.length > 1 && (
+                <button type="button" onClick={() => removeKeyframe(i)}>
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+          <button type="button" onClick={addKeyframe}>
+            + keyframe
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
