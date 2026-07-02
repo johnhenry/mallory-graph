@@ -4,7 +4,9 @@ providers = []
 [phases.setup]
 # Use recent nixpkgs-unstable that has nodejs_24
 nixpkgsArchive = "fb7944c166a3b630f177938e478f0378e64ce108"
-nixPkgs = ["nodejs_24"]
+# ffmpeg is required at runtime by manim-js/node (video/GIF export spawns the
+# `ffmpeg` binary directly off PATH -- see src/lib/export-video.ts).
+nixPkgs = ["nodejs_24", "ffmpeg"]
 
 [phases.install]
 cmds = ["npm install"]
