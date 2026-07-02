@@ -4,7 +4,7 @@ import { CellGraph } from "../lib/cell-graph.ts";
 import { exprToLatex } from "../lib/expr-to-latex.ts";
 import { integersModuloStructure } from "../lib/finite-structure.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
-import { DEFAULT_GRAPH_STATE } from "../lib/graph-state.ts";
+import { DEFAULT_GRAPH_STATE, decodeGraphState, encodeGraphState, type GraphState } from "../lib/graph-state.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { evaluateExprAsRational } from "../lib/rational-eval.ts";
 import { drawPath, drawPoint, drawScatter, type Viewport } from "../lib/render-path.ts";
@@ -185,6 +185,42 @@ export function GraphCanvas() {
   const [source, setSource] = useState(DEFAULT_GRAPH_STATE.cells[0].source);
   const [mode, setMode] = useState<"float" | "exact">("float");
   const [showSteps, setShowSteps] = useState(false);
+
+  // Hydrate from the URL fragment (if any) once, on mount. Params/structure
+  // are written before the source, so when the new source dirties
+  // FREE_VARS_CELL, its lazy default-seeding (`if (!graph.has(id))`) finds
+  // these slider cells already populated and leaves the decoded values alone.
+  useEffect(() => {
+    const decoded = decodeGraphState(window.location.hash.slice(1));
+    if (!decoded) return;
+    for (const [name, value] of Object.entries(decoded.params)) graph.set(paramCellId(name), value);
+    graph.set(STRUCTURE_CELL, decoded.structureModulus);
+    graph.set(EXPR_CELL, decoded.cells[0].source);
+    setSource(decoded.cells[0].source);
+    setMode(decoded.mode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the URL fragment in sync with the live graph state, so copying the
+  // current URL and opening it elsewhere reproduces the graph exactly.
+  useEffect(() => {
+    function syncUrl() {
+      const names = graph.get<string[]>(FREE_VARS_CELL);
+      const params: Record<string, number> = {};
+      for (const name of names) params[name] = graph.get<number>(paramCellId(name));
+      const state: GraphState = {
+        v: 2,
+        cells: [{ id: CELL_ID, source: graph.get<string>(EXPR_CELL) }],
+        viewport,
+        params,
+        structureModulus: graph.get<number | null>(STRUCTURE_CELL),
+        mode,
+      };
+      window.history.replaceState(null, "", `#${encodeGraphState(state)}`);
+    }
+    syncUrl();
+    return graph.subscribeAll(syncUrl);
+  }, [graph, viewport, mode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

@@ -13,37 +13,73 @@ export interface GraphStateV1 {
   viewport: { xMin: number; xMax: number; yMin: number; yMax: number };
 }
 
-export type GraphState = GraphStateV1;
+export interface GraphStateV2 {
+  v: 2;
+  /** Ordered list of expression cells, each compiled via Symbolic. */
+  cells: Array<{ id: string; source: string }>;
+  viewport: { xMin: number; xMax: number; yMin: number; yMax: number };
+  /** Current value of every auto-inferred slider, keyed by variable name. */
+  params: Record<string, number>;
+  /** Structure selector: a modulus for Z/nZ, or null for the real numbers. */
+  structureModulus: number | null;
+  /** Arithmetic mode for the y-readout. */
+  mode: "float" | "exact";
+}
+
+export type GraphState = GraphStateV2;
 
 export const DEFAULT_GRAPH_STATE: GraphState = {
-  v: 1,
+  v: 2,
   cells: [{ id: "f", source: "x^2" }],
   viewport: { xMin: -10, xMax: 10, yMin: -10, yMax: 100 },
+  params: {},
+  structureModulus: null,
+  mode: "float",
 };
 
 export function encodeGraphState(state: GraphState): string {
   return base64UrlEncode(JSON.stringify(state));
 }
 
-/** Returns null on any malformed/unrecognized fragment rather than throwing. */
+/** Returns null on any malformed/unrecognized fragment rather than throwing. Upgrades a v1 payload (no params/structure/mode) to v2 with defaults. */
 export function decodeGraphState(fragment: string): GraphState | null {
   try {
     const parsed: unknown = JSON.parse(base64UrlDecode(fragment));
-    return isGraphStateV1(parsed) ? parsed : null;
+    if (isGraphStateV2(parsed)) return parsed;
+    if (isGraphStateV1(parsed)) {
+      return { ...parsed, v: 2, params: {}, structureModulus: null, mode: "float" };
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-function isGraphStateV1(value: unknown): value is GraphStateV1 {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
+function hasCellsAndViewport(v: Record<string, unknown>): boolean {
   return (
-    v.v === 1 &&
     Array.isArray(v.cells) &&
     v.cells.every((c) => typeof c === "object" && c !== null && typeof (c as { id?: unknown }).id === "string" && typeof (c as { source?: unknown }).source === "string") &&
     typeof v.viewport === "object" &&
     v.viewport !== null
+  );
+}
+
+function isGraphStateV1(value: unknown): value is GraphStateV1 {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return v.v === 1 && hasCellsAndViewport(v);
+}
+
+function isGraphStateV2(value: unknown): value is GraphStateV2 {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.v === 2 &&
+    hasCellsAndViewport(v) &&
+    typeof v.params === "object" &&
+    v.params !== null &&
+    (v.structureModulus === null || typeof v.structureModulus === "number") &&
+    (v.mode === "float" || v.mode === "exact")
   );
 }
 
