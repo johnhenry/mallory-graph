@@ -6,6 +6,7 @@ import { integersModuloStructure } from "../lib/finite-structure.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { DEFAULT_GRAPH_STATE, decodeGraphState, encodeGraphState, type GraphState } from "../lib/graph-state.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
+import { resolveNaturalLanguageQuery } from "../lib/nl-query.ts";
 import { evaluateExprAsRational } from "../lib/rational-eval.ts";
 import { drawPath, drawPoint, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr } from "../lib/sample-function.ts";
@@ -267,8 +268,9 @@ export function GraphCanvas() {
         <input
           value={source}
           onChange={(e) => {
-            setSource(e.target.value);
-            graph.set(EXPR_CELL, e.target.value);
+            const value = e.target.value;
+            setSource(value);
+            graph.set(EXPR_CELL, resolveNaturalLanguageQuery(value) ?? value);
           }}
           style={{ font: "inherit", width: "20ch" }}
         />
