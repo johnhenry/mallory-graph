@@ -1,7 +1,9 @@
 import { Rational, Symbolic, type DifferentiationStep, type Expr, type Path2D } from "mallory-ts";
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type PointerEvent } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { cellIds, TIME_CELL, type CellIds } from "../lib/cell-ids.ts";
+import { resolveChatCommand, type ChatCommandContext } from "../lib/chat-commands.ts";
 import { exportVideo } from "../lib/export-video.ts";
 import { exprToLatex } from "../lib/expr-to-latex.ts";
 import { integersModuloStructure } from "../lib/finite-structure.ts";
@@ -31,35 +33,6 @@ const HEIGHT = 600;
 const RESOLUTION = 400;
 const AXIS_VARIABLE = "x";
 const HANDLE_HIT_RADIUS = 12;
-
-// TIME_CELL is deliberately NOT namespaced by cellId: linked panes (see
-// LinkedGraphPanes.tsx) share one CellGraph, and scrubbing/playing one pane's
-// timeline should drive every pane's curve off the same clock.
-const TIME_CELL = "time";
-
-/**
- * Every other per-pane cell id, namespaced by `cellId` so multiple
- * GraphCanvas instances can share one CellGraph without collisions.
- */
-function cellIds(cellId: string) {
-  return {
-    expr: `expr:${cellId}`,
-    freeVars: `freeVars:${cellId}`,
-    params: `params:${cellId}`,
-    path: `path:${cellId}`,
-    pointX: `pointX:${cellId}`,
-    point: `point:${cellId}`,
-    exact: `exact:${cellId}`,
-    structure: `structure:${cellId}`,
-    scatter: `scatter:${cellId}`,
-    derivative: `derivative:${cellId}`,
-    timelineDuration: `timelineDuration:${cellId}`,
-    param: (name: string) => `param:${cellId}:${name}`,
-    track: (name: string) => `track:${cellId}:${name}`,
-  };
-}
-
-type CellIds = ReturnType<typeof cellIds>;
 
 interface CurvePoint {
   x: number;
@@ -249,7 +222,7 @@ export function GraphCanvas({
   const duration = useCell<number>(graph, ids.timelineDuration);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
-  const [source, setSource] = useState(DEFAULT_GRAPH_STATE.cells[0].source);
+  const [source, setSource] = useState(defaultSource);
   const [mode, setMode] = useState<"float" | "exact">("float");
   const [showSteps, setShowSteps] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -293,6 +266,31 @@ export function GraphCanvas({
     } finally {
       setExporting(false);
     }
+  }
+
+  const [chatInput, setChatInput] = useState("");
+  const [chatLog, setChatLog] = useState<Array<{ input: string; ok: boolean; message: string }>>([]);
+
+  // Phase 10 (rule-based MVP): a chat message resolves to exactly the same
+  // CellGraph operation a human would trigger through the UI -- there's no
+  // separate "chat state" to drift out of sync with direct manipulation.
+  function handleChatSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const input = chatInput.trim();
+    if (!input) return;
+    const ctx: ChatCommandContext = { graph, ids, freeVars, setSource, setMode, setPlaying, setLoop, setSpeed };
+    const result = resolveChatCommand(input, ctx);
+    setChatLog((log) => [
+      ...log,
+      {
+        input,
+        ok: result?.ok ?? false,
+        message:
+          result?.message ??
+          `Didn't understand that. Try things like "set a to 3", "make it steeper", "animate a from 0 to 5 over 3s", "play", or "use GF(7)".`,
+      },
+    ]);
+    setChatInput("");
   }
 
   // Hydrate from the URL fragment (if any) once, on mount. Params/structure
@@ -420,6 +418,27 @@ export function GraphCanvas({
           ))}
         </div>
       )}
+      <form onSubmit={handleChatSubmit} style={{ margin: "0.5rem 0" }}>
+        <label>
+          Chat:{" "}
+          <input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder='"make it steeper", "animate a from 0 to 5 over 3s", "use GF(7)"...'
+            style={{ font: "inherit", width: "32ch" }}
+          />
+        </label>{" "}
+        <button type="submit">Send</button>
+        {chatLog.length > 0 && (
+          <ul style={{ fontSize: "0.85rem", listStyle: "none", padding: 0, margin: "0.25rem 0" }}>
+            {chatLog.slice(-5).map((entry, i) => (
+              <li key={i} style={{ color: entry.ok ? "inherit" : "crimson" }}>
+                <strong>{entry.input}</strong> — {entry.message}
+              </li>
+            ))}
+          </ul>
+        )}
+      </form>
       {showTransport && duration > 0 && (
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0.5rem 0" }}>
           <button type="button" onClick={() => setPlaying((p) => !p)}>
