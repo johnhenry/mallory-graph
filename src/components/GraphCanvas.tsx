@@ -220,9 +220,18 @@ export function GraphCanvas({
   const derivative = useCell<Derivative | null>(graph, ids.derivative);
   const time = useCell<number>(graph, TIME_CELL);
   const duration = useCell<number>(graph, ids.timelineDuration);
+  const exprValue = useCell<string>(graph, ids.expr);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [source, setSource] = useState(defaultSource);
+
+  // Keeps the input box's displayed text in sync whenever `ids.expr` changes
+  // for a reason other than typing in this same box -- e.g. a chat command,
+  // or a linked pane hydrating from the URL (LinkedGraphPanes.tsx) after this
+  // component has already mounted with its hardcoded default source.
+  useEffect(() => {
+    setSource(exprValue);
+  }, [exprValue]);
   const [mode, setMode] = useState<"float" | "exact">("float");
   const [showSteps, setShowSteps] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -316,17 +325,18 @@ export function GraphCanvas({
   // are written before the source, so when the new source dirties
   // freeVars, its lazy default-seeding (`if (!graph.has(id))`) finds these
   // slider cells already populated and leaves the decoded values alone.
-  // Only one pane per page should have `syncUrl` on -- the URL schema is
-  // single-cell, so a linked multi-pane view (LinkedGraphPanes.tsx) turns
-  // this off for every pane rather than have them fight over the fragment.
+  // Only one pane per page should have `syncUrl` on -- a linked multi-pane
+  // view (LinkedGraphPanes.tsx) turns this off for every pane and does its
+  // own combined hydration/write across every pane's cell instead.
   useEffect(() => {
     if (!syncUrl) return;
     const decoded = decodeGraphState(window.location.hash.slice(1));
     if (!decoded) return;
-    for (const [name, value] of Object.entries(decoded.params)) graph.set(ids.param(name), value);
-    graph.set(ids.structure, decoded.structureModulus);
-    graph.set(ids.expr, decoded.cells[0].source);
-    setSource(decoded.cells[0].source);
+    const cellState = decoded.cells.find((c) => c.id === cellId) ?? decoded.cells[0];
+    for (const [name, value] of Object.entries(cellState.params)) graph.set(ids.param(name), value);
+    graph.set(ids.structure, cellState.structureModulus);
+    graph.set(ids.expr, cellState.source);
+    setSource(cellState.source);
     setMode(decoded.mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -340,11 +350,9 @@ export function GraphCanvas({
       const params: Record<string, number> = {};
       for (const name of names) params[name] = graph.get<number>(ids.param(name));
       const state: GraphState = {
-        v: 2,
-        cells: [{ id: cellId, source: graph.get<string>(ids.expr) }],
+        v: 3,
+        cells: [{ id: cellId, source: graph.get<string>(ids.expr), params, structureModulus: graph.get<number | null>(ids.structure) }],
         viewport,
-        params,
-        structureModulus: graph.get<number | null>(ids.structure),
         mode,
       };
       window.history.replaceState(null, "", `#${encodeGraphState(state)}`);

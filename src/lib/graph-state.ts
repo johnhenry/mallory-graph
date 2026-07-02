@@ -26,14 +26,31 @@ export interface GraphStateV2 {
   mode: "float" | "exact";
 }
 
-export type GraphState = GraphStateV2;
+export interface GraphStateV3 {
+  v: 3;
+  /**
+   * Ordered list of expression cells, each compiled via Symbolic. Unlike v2,
+   * params/structureModulus live per-cell rather than once globally, so a
+   * multi-pane view (LinkedGraphPanes.tsx) round-trips every pane's state
+   * through one URL fragment, not just the first cell's.
+   */
+  cells: Array<{
+    id: string;
+    source: string;
+    params: Record<string, number>;
+    structureModulus: number | null;
+  }>;
+  viewport: { xMin: number; xMax: number; yMin: number; yMax: number };
+  /** Arithmetic mode for the y-readout -- still a single global setting, applied to the URL-syncing pane. */
+  mode: "float" | "exact";
+}
+
+export type GraphState = GraphStateV3;
 
 export const DEFAULT_GRAPH_STATE: GraphState = {
-  v: 2,
-  cells: [{ id: "f", source: "x^2" }],
+  v: 3,
+  cells: [{ id: "f", source: "x^2", params: {}, structureModulus: null }],
   viewport: { xMin: -10, xMax: 10, yMin: -10, yMax: 100 },
-  params: {},
-  structureModulus: null,
   mode: "float",
 };
 
@@ -41,18 +58,32 @@ export function encodeGraphState(state: GraphState): string {
   return base64UrlEncode(JSON.stringify(state));
 }
 
-/** Returns null on any malformed/unrecognized fragment rather than throwing. Upgrades a v1 payload (no params/structure/mode) to v2 with defaults. */
+/** Returns null on any malformed/unrecognized fragment rather than throwing. Upgrades v1/v2 payloads to v3 with defaults. */
 export function decodeGraphState(fragment: string): GraphState | null {
   try {
     const parsed: unknown = JSON.parse(base64UrlDecode(fragment));
-    if (isGraphStateV2(parsed)) return parsed;
-    if (isGraphStateV1(parsed)) {
-      return { ...parsed, v: 2, params: {}, structureModulus: null, mode: "float" };
-    }
+    if (isGraphStateV3(parsed)) return parsed;
+    if (isGraphStateV2(parsed)) return upgradeV2ToV3(parsed);
+    if (isGraphStateV1(parsed)) return upgradeV2ToV3(upgradeV1ToV2(parsed));
     return null;
   } catch {
     return null;
   }
+}
+
+function upgradeV1ToV2(v1: GraphStateV1): GraphStateV2 {
+  return { ...v1, v: 2, params: {}, structureModulus: null, mode: "float" };
+}
+
+function upgradeV2ToV3(v2: GraphStateV2): GraphStateV3 {
+  return {
+    v: 3,
+    viewport: v2.viewport,
+    mode: v2.mode,
+    cells: v2.cells.map((c, i) =>
+      i === 0 ? { ...c, params: v2.params, structureModulus: v2.structureModulus } : { ...c, params: {}, structureModulus: null },
+    ),
+  };
 }
 
 function hasCellsAndViewport(v: Record<string, unknown>): boolean {
@@ -81,6 +112,24 @@ function isGraphStateV2(value: unknown): value is GraphStateV2 {
     (v.structureModulus === null || typeof v.structureModulus === "number") &&
     (v.mode === "float" || v.mode === "exact")
   );
+}
+
+function isGraphStateV3(value: unknown): value is GraphStateV3 {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (v.v !== 3 || !(v.mode === "float" || v.mode === "exact")) return false;
+  if (!Array.isArray(v.cells) || typeof v.viewport !== "object" || v.viewport === null) return false;
+  return v.cells.every((c) => {
+    if (typeof c !== "object" || c === null) return false;
+    const cell = c as Record<string, unknown>;
+    return (
+      typeof cell.id === "string" &&
+      typeof cell.source === "string" &&
+      typeof cell.params === "object" &&
+      cell.params !== null &&
+      (cell.structureModulus === null || typeof cell.structureModulus === "number")
+    );
+  });
 }
 
 function base64UrlEncode(input: string): string {
