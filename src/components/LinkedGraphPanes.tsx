@@ -10,6 +10,12 @@ const PANE_DEFAULT_SOURCE: Record<(typeof PANE_IDS)[number], string> = {
   "pane-b": "cos(x)",
 };
 
+// Deliberately not namespaced by cellId, same reasoning as TIME_CELL: there's
+// one shared graph per linked view, and the primary pane's transport should
+// scrub across the longer of the two panes' animations, not cut off at
+// whichever pane happens to be "primary."
+const COMBINED_DURATION_CELL = "combinedDuration";
+
 /**
  * Two panes sharing one CellGraph. Each pane keeps its own
  * expression/params/timeline-duration cells (namespaced by cellId, via
@@ -19,11 +25,26 @@ const PANE_DEFAULT_SOURCE: Record<(typeof PANE_IDS)[number], string> = {
  * Only the primary pane renders a transport; both panes turn off their own
  * `syncUrl` and this component does one combined hydrate/write instead, so
  * the URL fragment round-trips every pane's source/params/structureModulus
- * rather than just the first cell's (see graph-state.ts's v3 schema).
+ * rather than just the first cell's (see graph-state.ts's v3 schema). The
+ * primary pane's transport is pointed at `combinedDuration` (the max of both
+ * panes' own `timelineDuration` cells) via GraphCanvas's `durationCellId`
+ * prop, rather than defaulting to its own -- otherwise scrubbing/playing
+ * would stop as soon as pane-a's animation ends even if pane-b's runs
+ * longer. Safe to `define` here before either pane's own `timelineDuration`
+ * cell exists yet: `CellGraph.get()` on an undefined id still registers the
+ * dependency edge, and `useSyncExternalStore`'s subscribe-time consistency
+ * check catches the resulting dirty flag and re-renders once both panes have
+ * mounted and defined their own duration cells.
  */
 export function LinkedGraphPanes() {
   const graphRef = useRef<CellGraph | null>(null);
-  if (!graphRef.current) graphRef.current = new CellGraph();
+  if (!graphRef.current) {
+    const graph = new CellGraph();
+    const idsA = cellIds(PANE_IDS[0]);
+    const idsB = cellIds(PANE_IDS[1]);
+    graph.define(COMBINED_DURATION_CELL, () => Math.max(graph.get<number>(idsA.timelineDuration), graph.get<number>(idsB.timelineDuration)));
+    graphRef.current = graph;
+  }
   const graph = graphRef.current;
 
   useEffect(() => {
@@ -67,7 +88,13 @@ export function LinkedGraphPanes() {
 
   return (
     <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-      <GraphCanvas cellId="pane-a" defaultSource={PANE_DEFAULT_SOURCE["pane-a"]} graph={graph} syncUrl={false} />
+      <GraphCanvas
+        cellId="pane-a"
+        defaultSource={PANE_DEFAULT_SOURCE["pane-a"]}
+        durationCellId={COMBINED_DURATION_CELL}
+        graph={graph}
+        syncUrl={false}
+      />
       <GraphCanvas cellId="pane-b" defaultSource={PANE_DEFAULT_SOURCE["pane-b"]} graph={graph} showTransport={false} syncUrl={false} />
     </div>
   );

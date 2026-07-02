@@ -199,6 +199,14 @@ export interface GraphCanvasProps {
   showTransport?: boolean;
   /** Hydrate from and write to the URL fragment. Only one pane per page should do this. */
   syncUrl?: boolean;
+  /**
+   * Drive the transport (scrub range, play/pause/loop bound) off a different
+   * cell than this pane's own `timelineDuration` -- e.g. a `combinedDuration`
+   * cell a linked multi-pane view defines as the max across every pane, so
+   * scrubbing the primary pane's transport doesn't cut off a longer-running
+   * animation on a secondary pane. Defaults to this pane's own duration cell.
+   */
+  durationCellId?: string;
 }
 
 export function GraphCanvas({
@@ -207,6 +215,7 @@ export function GraphCanvas({
   graph: externalGraph,
   showTransport = true,
   syncUrl = true,
+  durationCellId,
 }: GraphCanvasProps = {}) {
   const viewport = DEFAULT_GRAPH_STATE.viewport;
   const ids = cellIds(cellId);
@@ -219,7 +228,7 @@ export function GraphCanvas({
   const scatter = useCell<ScatterPoint[] | null>(graph, ids.scatter);
   const derivative = useCell<Derivative | null>(graph, ids.derivative);
   const time = useCell<number>(graph, TIME_CELL);
-  const duration = useCell<number>(graph, ids.timelineDuration);
+  const duration = useCell<number>(graph, durationCellId ?? ids.timelineDuration);
   const exprValue = useCell<string>(graph, ids.expr);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
