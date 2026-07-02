@@ -38,6 +38,8 @@ export class CellGraph {
   private listeners = new Map<string, Set<Listener>>();
   private globalListeners = new Set<Listener>();
   private stack: string[] = [];
+  private emitting = new Set<string>();
+  private notifyingGlobal = false;
 
   /** Write a raw source-of-truth value (e.g. a slider drag or text input). */
   set<T>(id: string, value: T): void {
@@ -79,33 +81,39 @@ export class CellGraph {
     if (cell.dirty && cell.compute) {
       if (this.stack.includes(id)) throw new CircularDependencyError([...this.stack, id]);
 
-      // Dependencies may differ between evaluations (e.g. a conditional
-      // expression) — detach from the old set before recomputing fresh.
-      for (const depId of cell.dependencies) this.cells.get(depId)?.dependents.delete(id);
-      cell.dependencies = new Set();
-
-      this.stack.push(id);
-      let next: T;
-      try {
-        next = cell.compute() as T;
-      } finally {
-        this.stack.pop();
-      }
-
-      cell.dirty = false;
-      const unchanged = cell.hasValue && structuralEqual(cell.value, next);
-      if (!unchanged) {
-        // Reassign only on a real change, preserving the old reference on a
-        // no-op recompute — this is what lets a downstream Object.is check
-        // (e.g. React's useSyncExternalStore, or React.memo) bail out.
-        cell.value = next;
-        cell.hasValue = true;
-        cell.version++;
-        this.emit(id);
-      }
+      this.recomputeAndEmit(id, cell);
     }
 
     return cell.value as T;
+  }
+
+  private recomputeAndEmit<T>(id: string, cell: CellRecord<T>): void {
+    // Dependencies may differ between evaluations (e.g. a conditional
+    // expression) — detach from the old set before recomputing fresh.
+    for (const depId of cell.dependencies) this.cells.get(depId)?.dependents.delete(id);
+    cell.dependencies = new Set();
+
+    this.stack.push(id);
+    let next: T;
+    try {
+      next = cell.compute!() as T;
+    } finally {
+      this.stack.pop();
+    }
+
+    cell.dirty = false;
+
+    const unchanged = cell.hasValue && structuralEqual(cell.value, next);
+
+    if (!unchanged) {
+      // Reassign only on a real change, preserving the old reference on a
+      // no-op recompute — this is what lets a downstream Object.is check
+      // (e.g. React's useSyncExternalStore, or React.memo) bail out.
+      cell.value = next;
+      cell.hasValue = true;
+      cell.version++;
+      this.emit(id);
+    }
   }
 
   /** The value useSyncExternalStore observes for this cell. */
@@ -132,6 +140,17 @@ export class CellGraph {
     return this.cells.has(id);
   }
 
+  /**
+   * Whether `id` has a real value yet, as opposed to merely existing as an
+   * empty record (`has()` returns true for a cell the instant anything reads
+   * it via `get`, even before it's ever been `set` or `define`d -- not a
+   * reliable "should I seed this?" check from a post-render effect that runs
+   * after a sibling compute has already read-and-thus-created it).
+   */
+  hasValue(id: string): boolean {
+    return this.cells.get(id)?.hasValue ?? false;
+  }
+
   delete(id: string): void {
     const cell = this.cells.get(id);
     if (!cell) return;
@@ -153,7 +172,12 @@ export class CellGraph {
   private propagateDirty(id: string): void {
     const cell = this.cells.get(id);
     if (!cell) return;
-    for (const depId of cell.dependents) {
+    // Snapshot before iterating: `emit` below can synchronously trigger a
+    // nested recompute (via useSyncExternalStore's listener) that detaches
+    // and re-adds an entry to this very `dependents` set. Iterating the live
+    // Set would then revisit that re-added entry within the same pass,
+    // looping forever between cells that share this dependency.
+    for (const depId of [...cell.dependents]) {
       const dep = this.cells.get(depId);
       if (!dep || dep.dirty) continue; // already dirty -> already propagated past this point
       dep.dirty = true;
@@ -166,9 +190,36 @@ export class CellGraph {
     }
   }
 
+  /**
+   * Notify `id`'s listeners that it may have changed. Guarded against
+   * reentrancy per-id: a `useSyncExternalStore` listener synchronously
+   * calls `getSnapshot` (React's own tearing check) as soon as it's
+   * notified, which re-enters `get()` and, on a real recompute, calls back
+   * into `emit(id)` for the very same id before this call has returned.
+   * Without the guard that nested call re-invokes every listener again
+   * (including the one currently on the stack), which re-triggers the same
+   * reentrant read, forever -- an unbounded synchronous storm that pins the
+   * CPU and eventually OOMs the JS heap. It's always safe to drop the
+   * nested notification: any consumer notified mid-flight still reads the
+   * freshest value the next time it calls `get()`, so no update is lost by
+   * collapsing repeat notifications for the same id into one.
+   */
   private emit(id: string): void {
-    for (const fn of this.listeners.get(id) ?? []) fn();
-    for (const fn of this.globalListeners) fn();
+    if (this.emitting.has(id)) return;
+    this.emitting.add(id);
+    try {
+      for (const fn of this.listeners.get(id) ?? []) fn();
+      if (!this.notifyingGlobal) {
+        this.notifyingGlobal = true;
+        try {
+          for (const fn of this.globalListeners) fn();
+        } finally {
+          this.notifyingGlobal = false;
+        }
+      }
+    } finally {
+      this.emitting.delete(id);
+    }
   }
 }
 

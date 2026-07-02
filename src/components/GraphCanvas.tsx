@@ -70,6 +70,13 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
     if (!graph.has(ids.expr)) {
       graph.set(ids.expr, source);
 
+      // Kept pure -- no `graph.set()` here. This cell is read via `get()`
+      // from inside React's `getSnapshot` during render (through `params`'s
+      // and `path`'s own computes), and a write triggered synchronously from
+      // there trips React's "Cannot update a component while rendering a
+      // different component" guard, which silently drops the resulting
+      // update. Newly-discovered free variables get their slider cell seeded
+      // by a `useEffect` in GraphCanvas instead (see below).
       graph.define(ids.freeVars, () => {
         let names: string[] = [];
         try {
@@ -77,10 +84,6 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
           names = collectFreeVars(expr, AXIS_VARIABLE);
         } catch {
           // Leave `names` empty on a mid-typing parse error; sliders just don't update.
-        }
-        for (const name of names) {
-          const id = ids.param(name);
-          if (!graph.has(id)) graph.set(id, defaultSliderRange(name).default);
         }
         return names;
       });
@@ -241,6 +244,22 @@ export function GraphCanvas({
   useEffect(() => {
     setSource(exprValue);
   }, [exprValue]);
+
+  // Seeds a slider cell for each newly-discovered free variable. This used
+  // to be a side effect of `ids.freeVars`'s compute, but that cell is read
+  // synchronously during render (via useCell -> useSyncExternalStore), and
+  // writing to other cells from there trips React's "Cannot update a
+  // component while rendering a different component" guard -- the write
+  // gets dropped and `params`'s dependency edges never get established, so
+  // later slider drags silently fail to redraw the curve. Doing it in an
+  // effect defers the write until after render, where it's safe.
+  useEffect(() => {
+    for (const name of freeVars) {
+      const id = ids.param(name);
+      if (!graph.hasValue(id)) graph.set(id, defaultSliderRange(name).default);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, freeVars]);
   const [mode, setMode] = useState<"float" | "exact">("float");
   const [showSteps, setShowSteps] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -331,9 +350,9 @@ export function GraphCanvas({
   }
 
   // Hydrate from the URL fragment (if any) once, on mount. Params/structure
-  // are written before the source, so when the new source dirties
-  // freeVars, its lazy default-seeding (`if (!graph.has(id))`) finds these
-  // slider cells already populated and leaves the decoded values alone.
+  // are written before the source, so by the time the seeding effect above
+  // sees the new source's free vars, these slider cells are already
+  // populated and its `if (!graph.hasValue(id))` guard leaves them alone.
   // Only one pane per page should have `syncUrl` on -- a linked multi-pane
   // view (LinkedGraphPanes.tsx) turns this off for every pane and does its
   // own combined hydration/write across every pane's cell instead.
@@ -584,7 +603,7 @@ export function GraphCanvas({
 function SliderControl({ graph, ids, name }: { graph: CellGraph; ids: CellIds; name: string }) {
   const id = ids.param(name);
   const trackId = ids.track(name);
-  const value = useCell<number>(graph, id);
+  const value = useCell<number>(graph, id) ?? defaultSliderRange(name).default;
   const track = useCell<Keyframe[] | undefined>(graph, trackId);
   const range = defaultSliderRange(name);
   const animated = track != null && track.length > 0;

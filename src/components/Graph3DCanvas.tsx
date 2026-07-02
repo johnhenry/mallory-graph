@@ -32,6 +32,13 @@ function useExpressionGraph3D(cellId: string, source: string, externalGraph?: Ce
     if (!graph.has(ids.expr)) {
       graph.set(ids.expr, source);
 
+      // Kept pure -- no `graph.set()` here. This cell is read via `get()`
+      // from inside React's `getSnapshot` during render (through `params`'s
+      // own compute), and a write triggered synchronously from there trips
+      // React's "Cannot update a component while rendering a different
+      // component" guard, which silently drops the resulting update.
+      // Newly-discovered free variables get their slider cell seeded by a
+      // `useEffect` in Graph3DCanvas instead.
       graph.define(ids.freeVars, () => {
         let names: string[] = [];
         try {
@@ -39,10 +46,6 @@ function useExpressionGraph3D(cellId: string, source: string, externalGraph?: Ce
           names = collectFreeVars(expr, "x").filter((name) => name !== "y");
         } catch {
           // Leave `names` empty on a mid-typing parse error; sliders just don't update.
-        }
-        for (const name of names) {
-          const id = ids.param(name);
-          if (!graph.has(id)) graph.set(id, defaultSliderRange(name).default);
         }
         return names;
       });
@@ -100,6 +103,17 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
   useEffect(() => {
     setSource(exprValue);
   }, [exprValue]);
+
+  // Seeds a slider cell for each newly-discovered free variable, deferred
+  // to an effect for the same reason as GraphCanvas -- see the comment on
+  // `ids.freeVars`'s compute above.
+  useEffect(() => {
+    for (const name of freeVars) {
+      const id = ids.param(name);
+      if (!graph.hasValue(id)) graph.set(id, defaultSliderRange(name).default);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, freeVars]);
 
   // Mount-once: renderer, camera, lights, orbit controls, and the render
   // loop. OrbitControls' damping needs a continuous rAF loop even when the
@@ -195,7 +209,7 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
 
 function Slider3DControl({ graph, ids, name }: { graph: CellGraph; ids: CellIds3D; name: string }) {
   const id = ids.param(name);
-  const value = useCell<number>(graph, id);
+  const value = useCell<number>(graph, id) ?? defaultSliderRange(name).default;
   const range = defaultSliderRange(name);
   return (
     <label style={{ display: "flex", flexDirection: "column", fontSize: "0.85rem" }}>
