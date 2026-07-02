@@ -1,0 +1,13 @@
+# TanStack Start is an SSR framework - run with Node.js, not as static site
+providers = []
+
+[phases.setup]
+# Use recent nixpkgs-unstable that has nodejs_24
+nixpkgsArchive = "fb7944c166a3b630f177938e478f0378e64ce108"
+nixPkgs = ["nodejs_24"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[phases.build]
+cmds = ["npm run build"]
