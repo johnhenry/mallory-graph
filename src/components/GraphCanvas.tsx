@@ -31,21 +31,35 @@ const HEIGHT = 600;
 const RESOLUTION = 400;
 const AXIS_VARIABLE = "x";
 const HANDLE_HIT_RADIUS = 12;
-const CELL_ID = DEFAULT_GRAPH_STATE.cells[0].id;
-const EXPR_CELL = `expr:${CELL_ID}`;
-const FREE_VARS_CELL = `freeVars:${CELL_ID}`;
-const PARAMS_CELL = `params:${CELL_ID}`;
-const PATH_CELL = `path:${CELL_ID}`;
-const POINT_X_CELL = `pointX:${CELL_ID}`;
-const POINT_CELL = `point:${CELL_ID}`;
-const EXACT_CELL = `exact:${CELL_ID}`;
-const STRUCTURE_CELL = `structure:${CELL_ID}`;
-const SCATTER_CELL = `scatter:${CELL_ID}`;
-const DERIVATIVE_CELL = `derivative:${CELL_ID}`;
-const TIME_CELL = `time:${CELL_ID}`;
-const TIMELINE_DURATION_CELL = `timelineDuration:${CELL_ID}`;
-const paramCellId = (name: string) => `param:${CELL_ID}:${name}`;
-const trackCellId = (name: string) => `track:${CELL_ID}:${name}`;
+
+// TIME_CELL is deliberately NOT namespaced by cellId: linked panes (see
+// LinkedGraphPanes.tsx) share one CellGraph, and scrubbing/playing one pane's
+// timeline should drive every pane's curve off the same clock.
+const TIME_CELL = "time";
+
+/**
+ * Every other per-pane cell id, namespaced by `cellId` so multiple
+ * GraphCanvas instances can share one CellGraph without collisions.
+ */
+function cellIds(cellId: string) {
+  return {
+    expr: `expr:${cellId}`,
+    freeVars: `freeVars:${cellId}`,
+    params: `params:${cellId}`,
+    path: `path:${cellId}`,
+    pointX: `pointX:${cellId}`,
+    point: `point:${cellId}`,
+    exact: `exact:${cellId}`,
+    structure: `structure:${cellId}`,
+    scatter: `scatter:${cellId}`,
+    derivative: `derivative:${cellId}`,
+    timelineDuration: `timelineDuration:${cellId}`,
+    param: (name: string) => `param:${cellId}:${name}`,
+    track: (name: string) => `track:${cellId}:${name}`,
+  };
+}
+
+type CellIds = ReturnType<typeof cellIds>;
 
 interface CurvePoint {
   x: number;
@@ -58,148 +72,181 @@ interface Derivative {
 }
 
 /**
- * Sets up the reactive graph once: source expr cell -> free-var list ->
- * per-variable slider cells (seeded lazily, so re-parsing on every keystroke
- * doesn't clobber a value the user already dragged) -> params snapshot ->
- * derived sampled-path cell. PATH_CELL falls back to the last successfully
- * sampled path on a parse/eval error, so a mid-typing invalid expression
- * (e.g. "2x sin(") leaves the last good curve on screen instead of blanking
- * the canvas.
+ * Sets up one pane's reactive cells on `graph` (created fresh unless an
+ * `externalGraph` is supplied by a caller that wants several panes to share
+ * one CellGraph — see LinkedGraphPanes.tsx): source expr cell -> free-var
+ * list -> per-variable slider cells (seeded lazily, so re-parsing on every
+ * keystroke doesn't clobber a value the user already dragged) -> params
+ * snapshot -> derived sampled-path cell. The path cell falls back to the
+ * last successfully sampled path on a parse/eval error, so a mid-typing
+ * invalid expression (e.g. "2x sin(") leaves the last good curve on screen
+ * instead of blanking the canvas.
+ *
+ * Guarded by `!graph.has(ids.expr)` (not just the `ref` mount-guard) so that
+ * mounting a second GraphCanvas pointed at an already-populated `cellId` on a
+ * shared graph is a safe no-op rather than clobbering that pane's state.
  */
-function useExpressionGraph(source: string, viewport: Viewport): CellGraph {
+function useExpressionGraph(cellId: string, source: string, viewport: Viewport, externalGraph?: CellGraph): CellGraph {
   const ref = useRef<CellGraph | null>(null);
   if (!ref.current) {
-    const graph = new CellGraph();
-    graph.set(EXPR_CELL, source);
+    const graph = externalGraph ?? new CellGraph();
+    const ids = cellIds(cellId);
 
-    graph.define(FREE_VARS_CELL, () => {
-      let names: string[] = [];
-      try {
-        const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(EXPR_CELL)));
-        names = collectFreeVars(expr, AXIS_VARIABLE);
-      } catch {
-        // Leave `names` empty on a mid-typing parse error; sliders just don't update.
-      }
-      for (const name of names) {
-        const id = paramCellId(name);
-        if (!graph.has(id)) graph.set(id, defaultSliderRange(name).default);
-      }
-      return names;
-    });
+    if (!graph.has(TIME_CELL)) graph.set(TIME_CELL, 0);
 
-    graph.define(PARAMS_CELL, () => {
-      const names = graph.get<string[]>(FREE_VARS_CELL);
-      const params: Record<string, number> = {};
-      for (const name of names) params[name] = graph.get<number>(paramCellId(name));
-      return params;
-    });
+    if (!graph.has(ids.expr)) {
+      graph.set(ids.expr, source);
 
-    let lastGoodPath: Path2D | null = null;
-    graph.define(PATH_CELL, () => {
-      try {
-        const params = graph.get<Record<string, number>>(PARAMS_CELL);
-        lastGoodPath = sampleExpr(
-          graph.get<string>(EXPR_CELL),
-          { min: viewport.xMin, max: viewport.xMax },
-          RESOLUTION,
-          AXIS_VARIABLE,
-          params,
-        );
-      } catch {
-        if (!lastGoodPath) throw new Error(`Initial expression "${source}" failed to parse`);
-      }
-      return lastGoodPath;
-    });
+      graph.define(ids.freeVars, () => {
+        let names: string[] = [];
+        try {
+          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+          names = collectFreeVars(expr, AXIS_VARIABLE);
+        } catch {
+          // Leave `names` empty on a mid-typing parse error; sliders just don't update.
+        }
+        for (const name of names) {
+          const id = ids.param(name);
+          if (!graph.has(id)) graph.set(id, defaultSliderRange(name).default);
+        }
+        return names;
+      });
 
-    graph.set(POINT_X_CELL, (viewport.xMin + viewport.xMax) / 2);
+      graph.define(ids.params, () => {
+        const names = graph.get<string[]>(ids.freeVars);
+        const params: Record<string, number> = {};
+        for (const name of names) params[name] = graph.get<number>(ids.param(name));
+        return params;
+      });
 
-    // A handle dragged along the curve: x follows the pointer, y is
-    // re-derived from the current expression/params, so it stays
-    // curve-constrained through any edit or slider drag.
-    let lastGoodPoint: CurvePoint | null = null;
-    graph.define(POINT_CELL, () => {
-      try {
-        const x = graph.get<number>(POINT_X_CELL);
-        const params = graph.get<Record<string, number>>(PARAMS_CELL);
-        const compiled = Symbolic.compile(preprocessImplicitMultiplication(graph.get<string>(EXPR_CELL)));
-        lastGoodPoint = { x, y: compiled({ ...params, [AXIS_VARIABLE]: x }) };
-      } catch {
-        // Leave the handle at its last good position on a mid-typing parse error.
-      }
-      return lastGoodPoint;
-    });
+      let lastGoodPath: Path2D | null = null;
+      graph.define(ids.path, () => {
+        try {
+          const params = graph.get<Record<string, number>>(ids.params);
+          lastGoodPath = sampleExpr(
+            graph.get<string>(ids.expr),
+            { min: viewport.xMin, max: viewport.xMax },
+            RESOLUTION,
+            AXIS_VARIABLE,
+            params,
+          );
+        } catch {
+          if (!lastGoodPath) throw new Error(`Initial expression "${source}" failed to parse`);
+        }
+        return lastGoodPath;
+      });
 
-    // Exact-mode readout: re-evaluates the current handle position over
-    // Rational arithmetic instead of floats. Returns null (not "0.333...")
-    // whenever the expression isn't exactly representable — a `func` node or
-    // a non-integer `pow` exponent — so callers fall back to the float value.
-    graph.define(EXACT_CELL, () => {
-      try {
-        const x = graph.get<number>(POINT_X_CELL);
-        const params = graph.get<Record<string, number>>(PARAMS_CELL);
-        const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(EXPR_CELL)));
-        const env: Record<string, Rational> = { [AXIS_VARIABLE]: Rational.fromNumber(x) };
-        for (const [name, value] of Object.entries(params)) env[name] = Rational.fromNumber(value);
-        return evaluateExprAsRational(expr, env).toString();
-      } catch {
-        return null;
-      }
-    });
+      graph.set(ids.pointX, (viewport.xMin + viewport.xMax) / 2);
 
-    // "Show steps" accordion: derivative of the current expression w.r.t. the
-    // axis variable, plus a bottom-up trace of every rule applied.
-    graph.define(DERIVATIVE_CELL, (): Derivative | null => {
-      try {
-        const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(EXPR_CELL)));
-        return Symbolic.differentiateSteps(expr, AXIS_VARIABLE);
-      } catch {
-        return null;
-      }
-    });
+      // A handle dragged along the curve: x follows the pointer, y is
+      // re-derived from the current expression/params, so it stays
+      // curve-constrained through any edit or slider drag.
+      let lastGoodPoint: CurvePoint | null = null;
+      graph.define(ids.point, () => {
+        try {
+          const x = graph.get<number>(ids.pointX);
+          const params = graph.get<Record<string, number>>(ids.params);
+          const compiled = Symbolic.compile(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+          lastGoodPoint = { x, y: compiled({ ...params, [AXIS_VARIABLE]: x }) };
+        } catch {
+          // Leave the handle at its last good position on a mid-typing parse error.
+        }
+        return lastGoodPoint;
+      });
 
-    graph.set(STRUCTURE_CELL, null as number | null);
+      // Exact-mode readout: re-evaluates the current handle position over
+      // Rational arithmetic instead of floats. Returns null (not "0.333...")
+      // whenever the expression isn't exactly representable — a `func` node or
+      // a non-integer `pow` exponent — so callers fall back to the float value.
+      graph.define(ids.exact, () => {
+        try {
+          const x = graph.get<number>(ids.pointX);
+          const params = graph.get<Record<string, number>>(ids.params);
+          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+          const env: Record<string, Rational> = { [AXIS_VARIABLE]: Rational.fromNumber(x) };
+          for (const [name, value] of Object.entries(params)) env[name] = Rational.fromNumber(value);
+          return evaluateExprAsRational(expr, env).toString();
+        } catch {
+          return null;
+        }
+      });
 
-    // Structure selector: when set to a modulus, plots a finite scatter (all
-    // elements of Z/nZ) instead of the continuous sampled path.
-    graph.define(SCATTER_CELL, () => {
-      const modulus = graph.get<number | null>(STRUCTURE_CELL);
-      if (modulus === null) return null;
-      try {
-        const params = graph.get<Record<string, number>>(PARAMS_CELL);
-        return sampleStructureExpr(graph.get<string>(EXPR_CELL), integersModuloStructure(modulus), AXIS_VARIABLE, params);
-      } catch {
-        return [];
-      }
-    });
+      // "Show steps" accordion: derivative of the current expression w.r.t. the
+      // axis variable, plus a bottom-up trace of every rule applied.
+      graph.define(ids.derivative, (): Derivative | null => {
+        try {
+          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+          return Symbolic.differentiateSteps(expr, AXIS_VARIABLE);
+        } catch {
+          return null;
+        }
+      });
 
-    // Parameter timeline: a param's value cell is either a plain `set` cell
-    // (static, dragged manually) or, once SliderControl enables a keyframe
-    // track for it, redefined to interpolate from that track + TIME_CELL --
-    // the same "cell reads another cell's current value" mechanism that
-    // powers sliders and direct manipulation elsewhere in this graph.
-    graph.set(TIME_CELL, 0);
-    graph.define(TIMELINE_DURATION_CELL, () => {
-      const names = graph.get<string[]>(FREE_VARS_CELL);
-      return timelineDuration(names.map((name) => graph.get<Keyframe[] | undefined>(trackCellId(name))));
-    });
+      graph.set(ids.structure, null as number | null);
+
+      // Structure selector: when set to a modulus, plots a finite scatter (all
+      // elements of Z/nZ) instead of the continuous sampled path.
+      graph.define(ids.scatter, () => {
+        const modulus = graph.get<number | null>(ids.structure);
+        if (modulus === null) return null;
+        try {
+          const params = graph.get<Record<string, number>>(ids.params);
+          return sampleStructureExpr(graph.get<string>(ids.expr), integersModuloStructure(modulus), AXIS_VARIABLE, params);
+        } catch {
+          return [];
+        }
+      });
+
+      // Parameter timeline: a param's value cell is either a plain `set` cell
+      // (static, dragged manually) or, once SliderControl enables a keyframe
+      // track for it, redefined to interpolate from that track + the shared
+      // TIME_CELL -- the same "cell reads another cell's current value"
+      // mechanism that powers sliders and direct manipulation elsewhere in
+      // this graph, and what lets multiple panes stay in lockstep off one
+      // clock (see LinkedGraphPanes.tsx).
+      graph.define(ids.timelineDuration, () => {
+        const names = graph.get<string[]>(ids.freeVars);
+        return timelineDuration(names.map((name) => graph.get<Keyframe[] | undefined>(ids.track(name))));
+      });
+    }
 
     ref.current = graph;
   }
   return ref.current;
 }
 
-export function GraphCanvas() {
+export interface GraphCanvasProps {
+  /** Namespaces this pane's cells on `graph`. Defaults to the app's single default cell id. */
+  cellId?: string;
+  /** Initial expression source for this pane, when it isn't already present on `graph`. */
+  defaultSource?: string;
+  /** Share an existing CellGraph (e.g. from LinkedGraphPanes) instead of creating a private one. */
+  graph?: CellGraph;
+  /** Hide the play/pause/loop/speed/export transport — for secondary panes in a linked view. */
+  showTransport?: boolean;
+  /** Hydrate from and write to the URL fragment. Only one pane per page should do this. */
+  syncUrl?: boolean;
+}
+
+export function GraphCanvas({
+  cellId = DEFAULT_GRAPH_STATE.cells[0].id,
+  defaultSource = DEFAULT_GRAPH_STATE.cells[0].source,
+  graph: externalGraph,
+  showTransport = true,
+  syncUrl = true,
+}: GraphCanvasProps = {}) {
   const viewport = DEFAULT_GRAPH_STATE.viewport;
-  const graph = useExpressionGraph(DEFAULT_GRAPH_STATE.cells[0].source, viewport);
-  const path = useCell<Path2D>(graph, PATH_CELL);
-  const point = useCell<CurvePoint | null>(graph, POINT_CELL);
-  const exact = useCell<string | null>(graph, EXACT_CELL);
-  const freeVars = useCell<string[]>(graph, FREE_VARS_CELL);
-  const modulus = useCell<number | null>(graph, STRUCTURE_CELL);
-  const scatter = useCell<ScatterPoint[] | null>(graph, SCATTER_CELL);
-  const derivative = useCell<Derivative | null>(graph, DERIVATIVE_CELL);
+  const ids = cellIds(cellId);
+  const graph = useExpressionGraph(cellId, defaultSource, viewport, externalGraph);
+  const path = useCell<Path2D>(graph, ids.path);
+  const point = useCell<CurvePoint | null>(graph, ids.point);
+  const exact = useCell<string | null>(graph, ids.exact);
+  const freeVars = useCell<string[]>(graph, ids.freeVars);
+  const modulus = useCell<number | null>(graph, ids.structure);
+  const scatter = useCell<ScatterPoint[] | null>(graph, ids.scatter);
+  const derivative = useCell<Derivative | null>(graph, ids.derivative);
   const time = useCell<number>(graph, TIME_CELL);
-  const duration = useCell<number>(graph, TIMELINE_DURATION_CELL);
+  const duration = useCell<number>(graph, ids.timelineDuration);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [source, setSource] = useState(DEFAULT_GRAPH_STATE.cells[0].source);
@@ -217,16 +264,16 @@ export function GraphCanvas() {
     setExporting(true);
     setExportError(null);
     try {
-      const names = graph.get<string[]>(FREE_VARS_CELL);
+      const names = graph.get<string[]>(ids.freeVars);
       const params: Record<string, number> = {};
       const tracks: Record<string, Keyframe[] | undefined> = {};
       for (const name of names) {
-        params[name] = graph.get<number>(paramCellId(name));
-        tracks[name] = graph.get<Keyframe[] | undefined>(trackCellId(name));
+        params[name] = graph.get<number>(ids.param(name));
+        tracks[name] = graph.get<Keyframe[] | undefined>(ids.track(name));
       }
       const result = await exportVideoFn({
         data: {
-          source: graph.get<string>(EXPR_CELL),
+          source: graph.get<string>(ids.expr),
           params,
           tracks,
           viewport,
@@ -250,14 +297,18 @@ export function GraphCanvas() {
 
   // Hydrate from the URL fragment (if any) once, on mount. Params/structure
   // are written before the source, so when the new source dirties
-  // FREE_VARS_CELL, its lazy default-seeding (`if (!graph.has(id))`) finds
-  // these slider cells already populated and leaves the decoded values alone.
+  // freeVars, its lazy default-seeding (`if (!graph.has(id))`) finds these
+  // slider cells already populated and leaves the decoded values alone.
+  // Only one pane per page should have `syncUrl` on -- the URL schema is
+  // single-cell, so a linked multi-pane view (LinkedGraphPanes.tsx) turns
+  // this off for every pane rather than have them fight over the fragment.
   useEffect(() => {
+    if (!syncUrl) return;
     const decoded = decodeGraphState(window.location.hash.slice(1));
     if (!decoded) return;
-    for (const [name, value] of Object.entries(decoded.params)) graph.set(paramCellId(name), value);
-    graph.set(STRUCTURE_CELL, decoded.structureModulus);
-    graph.set(EXPR_CELL, decoded.cells[0].source);
+    for (const [name, value] of Object.entries(decoded.params)) graph.set(ids.param(name), value);
+    graph.set(ids.structure, decoded.structureModulus);
+    graph.set(ids.expr, decoded.cells[0].source);
     setSource(decoded.cells[0].source);
     setMode(decoded.mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -266,23 +317,25 @@ export function GraphCanvas() {
   // Keep the URL fragment in sync with the live graph state, so copying the
   // current URL and opening it elsewhere reproduces the graph exactly.
   useEffect(() => {
-    function syncUrl() {
-      const names = graph.get<string[]>(FREE_VARS_CELL);
+    if (!syncUrl) return;
+    function writeUrl() {
+      const names = graph.get<string[]>(ids.freeVars);
       const params: Record<string, number> = {};
-      for (const name of names) params[name] = graph.get<number>(paramCellId(name));
+      for (const name of names) params[name] = graph.get<number>(ids.param(name));
       const state: GraphState = {
         v: 2,
-        cells: [{ id: CELL_ID, source: graph.get<string>(EXPR_CELL) }],
+        cells: [{ id: cellId, source: graph.get<string>(ids.expr) }],
         viewport,
         params,
-        structureModulus: graph.get<number | null>(STRUCTURE_CELL),
+        structureModulus: graph.get<number | null>(ids.structure),
         mode,
       };
       window.history.replaceState(null, "", `#${encodeGraphState(state)}`);
     }
-    syncUrl();
-    return graph.subscribeAll(syncUrl);
-  }, [graph, viewport, mode]);
+    writeUrl();
+    return graph.subscribeAll(writeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, viewport, mode, syncUrl]);
 
   // Timeline playback: advances TIME_CELL by real elapsed time (scaled by
   // speed) every frame, looping back to 0 at `duration` or stopping there.
@@ -338,7 +391,7 @@ export function GraphCanvas() {
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const x = Math.min(viewport.xMax, Math.max(viewport.xMin, toDataX(sx, viewport, WIDTH)));
-    graph.set(POINT_X_CELL, x);
+    graph.set(ids.pointX, x);
   }
 
   function handlePointerUp(e: PointerEvent<HTMLCanvasElement>) {
@@ -355,7 +408,7 @@ export function GraphCanvas() {
           onChange={(e) => {
             const value = e.target.value;
             setSource(value);
-            graph.set(EXPR_CELL, resolveNaturalLanguageQuery(value) ?? value);
+            graph.set(ids.expr, resolveNaturalLanguageQuery(value) ?? value);
           }}
           style={{ font: "inherit", width: "20ch" }}
         />
@@ -363,11 +416,11 @@ export function GraphCanvas() {
       {freeVars.length > 0 && (
         <div style={{ display: "flex", gap: "1rem", margin: "0.5rem 0" }}>
           {freeVars.map((name) => (
-            <SliderControl key={name} graph={graph} name={name} />
+            <SliderControl key={name} graph={graph} ids={ids} name={name} />
           ))}
         </div>
       )}
-      {duration > 0 && (
+      {showTransport && duration > 0 && (
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0.5rem 0" }}>
           <button type="button" onClick={() => setPlaying((p) => !p)}>
             {playing ? "Pause" : "Play"}
@@ -416,7 +469,7 @@ export function GraphCanvas() {
           value={modulus === null ? "real" : String(modulus)}
           onChange={(e) => {
             const v = e.target.value;
-            graph.set(STRUCTURE_CELL, v === "real" ? null : Number(v));
+            graph.set(ids.structure, v === "real" ? null : Number(v));
           }}
         >
           {STRUCTURE_OPTIONS.map((opt) => (
@@ -473,9 +526,9 @@ export function GraphCanvas() {
   );
 }
 
-function SliderControl({ graph, name }: { graph: CellGraph; name: string }) {
-  const id = paramCellId(name);
-  const trackId = trackCellId(name);
+function SliderControl({ graph, ids, name }: { graph: CellGraph; ids: CellIds; name: string }) {
+  const id = ids.param(name);
+  const trackId = ids.track(name);
   const value = useCell<number>(graph, id);
   const track = useCell<Keyframe[] | undefined>(graph, trackId);
   const range = defaultSliderRange(name);
