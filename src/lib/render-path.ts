@@ -39,3 +39,25 @@ export function drawPoint(
   ctx.fill();
   ctx.restore();
 }
+
+/** Draw a set of discrete data-space points as a scatter (used for finite-structure plots, e.g. GF(7)). */
+export function drawScatter(
+  ctx: CanvasRenderingContext2D,
+  points: Array<{ x: number; y: number }>,
+  viewport: Viewport,
+  width: number,
+  height: number,
+  radius = 5,
+  color = "#2563eb",
+): void {
+  ctx.save();
+  ctx.fillStyle = color;
+  for (const p of points) {
+    const sx = toScreenX(p.x, viewport, width);
+    const sy = toScreenY(p.y, viewport, height);
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}

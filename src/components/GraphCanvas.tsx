@@ -1,14 +1,24 @@
 import { Rational, Symbolic, type Path2D } from "mallory-ts";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { integersModuloStructure } from "../lib/finite-structure.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { DEFAULT_GRAPH_STATE } from "../lib/graph-state.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { evaluateExprAsRational } from "../lib/rational-eval.ts";
-import { drawPath, drawPoint, type Viewport } from "../lib/render-path.ts";
+import { drawPath, drawPoint, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr } from "../lib/sample-function.ts";
+import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
+
+const STRUCTURE_OPTIONS: Array<{ label: string; modulus: number | null }> = [
+  { label: "Real numbers", modulus: null },
+  { label: "Z/2Z (GF(2))", modulus: 2 },
+  { label: "Z/5Z", modulus: 5 },
+  { label: "Z/7Z (GF(7))", modulus: 7 },
+  { label: "Z/11Z", modulus: 11 },
+];
 
 const WIDTH = 600;
 const HEIGHT = 600;
@@ -23,6 +33,8 @@ const PATH_CELL = `path:${CELL_ID}`;
 const POINT_X_CELL = `pointX:${CELL_ID}`;
 const POINT_CELL = `point:${CELL_ID}`;
 const EXACT_CELL = `exact:${CELL_ID}`;
+const STRUCTURE_CELL = `structure:${CELL_ID}`;
+const SCATTER_CELL = `scatter:${CELL_ID}`;
 const paramCellId = (name: string) => `param:${CELL_ID}:${name}`;
 
 interface CurvePoint {
@@ -119,6 +131,21 @@ function useExpressionGraph(source: string, viewport: Viewport): CellGraph {
       }
     });
 
+    graph.set(STRUCTURE_CELL, null as number | null);
+
+    // Structure selector: when set to a modulus, plots a finite scatter (all
+    // elements of Z/nZ) instead of the continuous sampled path.
+    graph.define(SCATTER_CELL, () => {
+      const modulus = graph.get<number | null>(STRUCTURE_CELL);
+      if (modulus === null) return null;
+      try {
+        const params = graph.get<Record<string, number>>(PARAMS_CELL);
+        return sampleStructureExpr(graph.get<string>(EXPR_CELL), integersModuloStructure(modulus), AXIS_VARIABLE, params);
+      } catch {
+        return [];
+      }
+    });
+
     ref.current = graph;
   }
   return ref.current;
@@ -131,6 +158,8 @@ export function GraphCanvas() {
   const point = useCell<CurvePoint | null>(graph, POINT_CELL);
   const exact = useCell<string | null>(graph, EXACT_CELL);
   const freeVars = useCell<string[]>(graph, FREE_VARS_CELL);
+  const modulus = useCell<number | null>(graph, STRUCTURE_CELL);
+  const scatter = useCell<ScatterPoint[] | null>(graph, SCATTER_CELL);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [source, setSource] = useState(DEFAULT_GRAPH_STATE.cells[0].source);
@@ -141,12 +170,16 @@ export function GraphCanvas() {
     const ctx = canvas?.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
-    drawPath(ctx, path, viewport, WIDTH, HEIGHT);
-    if (point) drawPoint(ctx, point, viewport, WIDTH, HEIGHT);
-  }, [path, point, viewport]);
+    if (scatter) {
+      drawScatter(ctx, scatter, viewport, WIDTH, HEIGHT);
+    } else {
+      drawPath(ctx, path, viewport, WIDTH, HEIGHT);
+      if (point) drawPoint(ctx, point, viewport, WIDTH, HEIGHT);
+    }
+  }, [path, point, scatter, viewport]);
 
   function handlePointerDown(e: PointerEvent<HTMLCanvasElement>) {
-    if (!point) return;
+    if (!point || modulus !== null) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
@@ -190,14 +223,32 @@ export function GraphCanvas() {
           ))}
         </div>
       )}
-      <div role="radiogroup" aria-label="Arithmetic mode" style={{ margin: "0.5rem 0" }}>
-        <label>
-          <input type="radio" name="mode" checked={mode === "float"} onChange={() => setMode("float")} /> Float
-        </label>{" "}
-        <label>
-          <input type="radio" name="mode" checked={mode === "exact"} onChange={() => setMode("exact")} /> Exact
-        </label>
-      </div>
+      <label style={{ display: "block", margin: "0.5rem 0" }}>
+        Structure:{" "}
+        <select
+          value={modulus === null ? "real" : String(modulus)}
+          onChange={(e) => {
+            const v = e.target.value;
+            graph.set(STRUCTURE_CELL, v === "real" ? null : Number(v));
+          }}
+        >
+          {STRUCTURE_OPTIONS.map((opt) => (
+            <option key={opt.label} value={opt.modulus === null ? "real" : String(opt.modulus)}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {modulus === null && (
+        <div role="radiogroup" aria-label="Arithmetic mode" style={{ margin: "0.5rem 0" }}>
+          <label>
+            <input type="radio" name="mode" checked={mode === "float"} onChange={() => setMode("float")} /> Float
+          </label>{" "}
+          <label>
+            <input type="radio" name="mode" checked={mode === "exact"} onChange={() => setMode("exact")} /> Exact
+          </label>
+        </div>
+      )}
       <div>
         <canvas
           ref={canvasRef}
@@ -209,7 +260,7 @@ export function GraphCanvas() {
           onPointerUp={handlePointerUp}
         />
       </div>
-      {point && (
+      {modulus === null && point && (
         <div>
           y = {mode === "exact" ? exact ?? `${point.y.toFixed(4)} (not exact)` : point.y.toFixed(4)}
         </div>
