@@ -1,6 +1,8 @@
 import { Rational, Symbolic, type DifferentiationStep, type Expr, type Path2D } from "mallory-ts";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { exportVideo } from "../lib/export-video.ts";
 import { exprToLatex } from "../lib/expr-to-latex.ts";
 import { integersModuloStructure } from "../lib/finite-structure.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
@@ -206,6 +208,45 @@ export function GraphCanvas() {
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
   const [speed, setSpeed] = useState(1);
+  const [exportFormat, setExportFormat] = useState<"mp4" | "gif">("mp4");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportVideoFn = useServerFn(exportVideo);
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const names = graph.get<string[]>(FREE_VARS_CELL);
+      const params: Record<string, number> = {};
+      const tracks: Record<string, Keyframe[] | undefined> = {};
+      for (const name of names) {
+        params[name] = graph.get<number>(paramCellId(name));
+        tracks[name] = graph.get<Keyframe[] | undefined>(trackCellId(name));
+      }
+      const result = await exportVideoFn({
+        data: {
+          source: graph.get<string>(EXPR_CELL),
+          params,
+          tracks,
+          viewport,
+          duration,
+          format: exportFormat,
+        },
+      });
+      const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: result.mimeType }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mallory-graph-export.${exportFormat}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // Hydrate from the URL fragment (if any) once, on mount. Params/structure
   // are written before the source, so when the new source dirties
@@ -359,6 +400,14 @@ export function GraphCanvas() {
           <span>
             {time.toFixed(2)}s / {duration.toFixed(2)}s
           </span>
+          <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as "mp4" | "gif")}>
+            <option value="mp4">MP4</option>
+            <option value="gif">GIF</option>
+          </select>
+          <button type="button" onClick={handleExport} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export"}
+          </button>
+          {exportError && <span style={{ color: "crimson" }}>{exportError}</span>}
         </div>
       )}
       <label style={{ display: "block", margin: "0.5rem 0" }}>

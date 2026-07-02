@@ -8,10 +8,12 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.100",
     "@tanstack/react-router": "1.170.17",
     "@tanstack/react-start": "1.168.27",
     "katex": "^0.17.0",
     "mallory-ts": "github:johnhenry/mallory-ts#18d0a162cdbbfb8f399225b800cfd99479741e9f",
+    "manim-js": "github:johnhenry/manim-js#17175b6e907b2cca08034eb1b576575b4be23470",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "srvx": "^0.10.0"
