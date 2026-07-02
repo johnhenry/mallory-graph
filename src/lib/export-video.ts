@@ -1,11 +1,11 @@
 /**
- * Server-only manim-js video/GIF export: translates the graph's expression
- * plus its current parameter timeline into a scripted manim-js Scene
+ * Server-only ecmanim video/GIF export: translates the graph's expression
+ * plus its current parameter timeline into a scripted ecmanim Scene
  * (Axes.plot + alwaysRedraw), then renders it to a video/GIF buffer.
  *
  * Deliberately does NOT use ValueTracker + Scene.play() to drive per-segment
  * timing: Scene.play()'s trailing-config `runTime` override relies on a
- * `_playConfig` marker that nothing in this manim-js version ever sets, so a
+ * `_playConfig` marker that nothing in this ecmanim version ever sets, so a
  * custom per-segment duration can't be threaded through play() as written
  * upstream. Instead, a single time accumulator (advanced via a plain
  * `addUpdater` on the already-scene-safe Axes mobject) plus a lone
@@ -24,7 +24,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { Symbolic } from "mallory-ts";
-import { Axes, alwaysRedraw, render } from "manim-js/node";
+import { Axes, alwaysRedraw, render } from "ecmanim/node";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { interpolateKeyframes, type Keyframe } from "./timeline.ts";
 
