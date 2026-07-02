@@ -556,10 +556,22 @@ export function GraphCanvas({
       {modulus === null && (
         <div role="radiogroup" aria-label="Arithmetic mode" style={{ margin: "0.5rem 0" }}>
           <label>
-            <input type="radio" name="mode" checked={mode === "float"} onChange={() => setMode("float")} /> Float
+            <input
+              type="radio"
+              name={`mode-${cellId}`}
+              checked={mode === "float"}
+              onChange={() => setMode("float")}
+            />{" "}
+            Float
           </label>{" "}
           <label>
-            <input type="radio" name="mode" checked={mode === "exact"} onChange={() => setMode("exact")} /> Exact
+            <input
+              type="radio"
+              name={`mode-${cellId}`}
+              checked={mode === "exact"}
+              onChange={() => setMode("exact")}
+            />{" "}
+            Exact
           </label>
         </div>
       )}
