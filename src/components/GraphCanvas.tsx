@@ -1,9 +1,10 @@
-import { Symbolic, type Path2D } from "mallory-ts";
+import { Rational, Symbolic, type Path2D } from "mallory-ts";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { DEFAULT_GRAPH_STATE } from "../lib/graph-state.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
+import { evaluateExprAsRational } from "../lib/rational-eval.ts";
 import { drawPath, drawPoint, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr } from "../lib/sample-function.ts";
 import { useCell } from "../lib/use-cell.ts";
@@ -21,6 +22,7 @@ const PARAMS_CELL = `params:${CELL_ID}`;
 const PATH_CELL = `path:${CELL_ID}`;
 const POINT_X_CELL = `pointX:${CELL_ID}`;
 const POINT_CELL = `point:${CELL_ID}`;
+const EXACT_CELL = `exact:${CELL_ID}`;
 const paramCellId = (name: string) => `param:${CELL_ID}:${name}`;
 
 interface CurvePoint {
@@ -100,6 +102,23 @@ function useExpressionGraph(source: string, viewport: Viewport): CellGraph {
       return lastGoodPoint;
     });
 
+    // Exact-mode readout: re-evaluates the current handle position over
+    // Rational arithmetic instead of floats. Returns null (not "0.333...")
+    // whenever the expression isn't exactly representable — a `func` node or
+    // a non-integer `pow` exponent — so callers fall back to the float value.
+    graph.define(EXACT_CELL, () => {
+      try {
+        const x = graph.get<number>(POINT_X_CELL);
+        const params = graph.get<Record<string, number>>(PARAMS_CELL);
+        const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(EXPR_CELL)));
+        const env: Record<string, Rational> = { [AXIS_VARIABLE]: Rational.fromNumber(x) };
+        for (const [name, value] of Object.entries(params)) env[name] = Rational.fromNumber(value);
+        return evaluateExprAsRational(expr, env).toString();
+      } catch {
+        return null;
+      }
+    });
+
     ref.current = graph;
   }
   return ref.current;
@@ -110,10 +129,12 @@ export function GraphCanvas() {
   const graph = useExpressionGraph(DEFAULT_GRAPH_STATE.cells[0].source, viewport);
   const path = useCell<Path2D>(graph, PATH_CELL);
   const point = useCell<CurvePoint | null>(graph, POINT_CELL);
+  const exact = useCell<string | null>(graph, EXACT_CELL);
   const freeVars = useCell<string[]>(graph, FREE_VARS_CELL);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
   const [source, setSource] = useState(DEFAULT_GRAPH_STATE.cells[0].source);
+  const [mode, setMode] = useState<"float" | "exact">("float");
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -169,6 +190,14 @@ export function GraphCanvas() {
           ))}
         </div>
       )}
+      <div role="radiogroup" aria-label="Arithmetic mode" style={{ margin: "0.5rem 0" }}>
+        <label>
+          <input type="radio" name="mode" checked={mode === "float"} onChange={() => setMode("float")} /> Float
+        </label>{" "}
+        <label>
+          <input type="radio" name="mode" checked={mode === "exact"} onChange={() => setMode("exact")} /> Exact
+        </label>
+      </div>
       <div>
         <canvas
           ref={canvasRef}
@@ -180,6 +209,11 @@ export function GraphCanvas() {
           onPointerUp={handlePointerUp}
         />
       </div>
+      {point && (
+        <div>
+          y = {mode === "exact" ? exact ?? `${point.y.toFixed(4)} (not exact)` : point.y.toFixed(4)}
+        </div>
+      )}
     </div>
   );
 }
