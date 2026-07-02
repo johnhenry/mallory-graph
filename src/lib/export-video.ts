@@ -13,17 +13,20 @@
  * curve every frame straight from `interpolateKeyframes`, sidestepping the
  * play()/runTime question entirely.
  *
- * Bounded MVP per the plan's own flagged risk: renders synchronously inside
- * the request (short clip, modest resolution) rather than an async job
- * queue or separate worker app.
+ * Phase 11b: rendering runs as a background job rather than inside the SSR
+ * request -- a long/high-res export would otherwise hold a request open for
+ * the render's full wall-clock duration (ffmpeg + per-frame canvas draws),
+ * risking proxy/gateway timeouts. The job store is a plain in-memory Map:
+ * this app runs as a single Dokku process, so there's no multi-instance
+ * fan-out to coordinate and no need for real queue infra (Redis/BullMQ) yet.
+ * Jobs are swept on a timer so a browser that never polls again doesn't leak
+ * the rendered buffer forever.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { Symbolic } from "mallory-ts";
 import { Axes, alwaysRedraw, render } from "manim-js/node";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { interpolateKeyframes, type Keyframe } from "./timeline.ts";
-
-const MAX_DURATION_SECONDS = 12;
 
 export interface ExportVideoInput {
   source: string;
@@ -36,14 +39,33 @@ export interface ExportVideoInput {
   format: "mp4" | "gif";
 }
 
-export const exportVideo = createServerFn({ method: "POST" })
-  .validator((data: ExportVideoInput) => data)
-  .handler(async ({ data }) => {
-    const { source, params, tracks, viewport, duration, format } = data;
-    if (duration <= 0) {
-      throw new Error("Nothing to export: no parameter has a keyframe track.");
+export interface ExportVideoResult {
+  data: string;
+  mimeType: string;
+}
+
+type ExportJob =
+  | { status: "pending" }
+  | { status: "done"; result: ExportVideoResult }
+  | { status: "error"; message: string };
+
+const JOB_TTL_MS = 5 * 60 * 1000;
+const jobs = new Map<string, ExportJob>();
+const jobCreatedAt = new Map<string, number>();
+
+function sweepExpiredJobs() {
+  const now = Date.now();
+  for (const [id, createdAt] of jobCreatedAt) {
+    if (now - createdAt > JOB_TTL_MS) {
+      jobs.delete(id);
+      jobCreatedAt.delete(id);
     }
-    const clampedDuration = Math.min(duration, MAX_DURATION_SECONDS);
+  }
+}
+
+async function runExportJob(jobId: string, data: ExportVideoInput) {
+  const { source, params, tracks, viewport, duration, format } = data;
+  try {
     const compiled = Symbolic.compile(preprocessImplicitMultiplication(source));
 
     async function construct(scene: any) {
@@ -70,7 +92,7 @@ export const exportVideo = createServerFn({ method: "POST" })
       );
 
       scene.add(axes, curve);
-      await scene.wait(clampedDuration);
+      await scene.wait(duration);
     }
 
     const { promises: fs } = await import("node:fs");
@@ -90,11 +112,38 @@ export const exportVideo = createServerFn({ method: "POST" })
         verbose: false,
       });
       const buffer = await fs.readFile(outPath);
-      return {
-        data: buffer.toString("base64"),
-        mimeType: format === "gif" ? "image/gif" : "video/mp4",
-      };
+      jobs.set(jobId, {
+        status: "done",
+        result: { data: buffer.toString("base64"), mimeType: format === "gif" ? "image/gif" : "video/mp4" },
+      });
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  } catch (e) {
+    jobs.set(jobId, { status: "error", message: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+export const startExportVideoJob = createServerFn({ method: "POST" })
+  .validator((data: ExportVideoInput) => data)
+  .handler(async ({ data }) => {
+    if (data.duration <= 0) {
+      throw new Error("Nothing to export: no parameter has a keyframe track.");
+    }
+    sweepExpiredJobs();
+    const jobId = crypto.randomUUID();
+    jobs.set(jobId, { status: "pending" });
+    jobCreatedAt.set(jobId, Date.now());
+    // Deliberately not awaited: the render runs in the background while this
+    // server fn returns immediately with a job id to poll.
+    void runExportJob(jobId, data);
+    return { jobId };
+  });
+
+export const getExportVideoJob = createServerFn({ method: "GET" })
+  .validator((data: { jobId: string }) => data)
+  .handler(async ({ data }) => {
+    const job = jobs.get(data.jobId);
+    if (!job) throw new Error("Unknown or expired export job.");
+    return job;
   });

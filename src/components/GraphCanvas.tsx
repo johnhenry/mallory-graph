@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIds, TIME_CELL, type CellIds } from "../lib/cell-ids.ts";
 import { resolveChatCommand, type ChatCommandContext } from "../lib/chat-commands.ts";
-import { exportVideo } from "../lib/export-video.ts";
+import { getExportVideoJob, startExportVideoJob } from "../lib/export-video.ts";
 import { exprToLatex } from "../lib/expr-to-latex.ts";
 import { integersModuloStructure } from "../lib/finite-structure.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
@@ -231,8 +231,14 @@ export function GraphCanvas({
   const [exportFormat, setExportFormat] = useState<"mp4" | "gif">("mp4");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const exportVideoFn = useServerFn(exportVideo);
+  const startExportVideoJobFn = useServerFn(startExportVideoJob);
+  const getExportVideoJobFn = useServerFn(getExportVideoJob);
 
+  // Phase 11b: the render runs as a background job (see export-video.ts)
+  // rather than inside one SSR request, so a long or high-res export doesn't
+  // hold a request open for the whole render -- this just polls for
+  // completion instead of awaiting a single response. No duration cap here:
+  // longer exports simply take longer to poll for.
   async function handleExport() {
     setExporting(true);
     setExportError(null);
@@ -244,7 +250,7 @@ export function GraphCanvas({
         params[name] = graph.get<number>(ids.param(name));
         tracks[name] = graph.get<Keyframe[] | undefined>(ids.track(name));
       }
-      const result = await exportVideoFn({
+      const { jobId } = await startExportVideoJobFn({
         data: {
           source: graph.get<string>(ids.expr),
           params,
@@ -254,8 +260,21 @@ export function GraphCanvas({
           format: exportFormat,
         },
       });
-      const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: result.mimeType }));
+      const job = await new Promise<Awaited<ReturnType<typeof getExportVideoJobFn>>>((resolve, reject) => {
+        const poll = () => {
+          getExportVideoJobFn({ data: { jobId } }).then((status) => {
+            if (status.status === "pending") setTimeout(poll, 1000);
+            else resolve(status);
+          }, reject);
+        };
+        poll();
+      });
+      if (job.status !== "done") {
+        throw new Error(job.status === "error" ? job.message : "Export job did not complete.");
+      }
+      const { data, mimeType } = job.result;
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
       const a = document.createElement("a");
       a.href = url;
       a.download = `mallory-graph-export.${exportFormat}`;
