@@ -1,9 +1,14 @@
 {
   "name": "mallory-graph",
   "version": "0.0.1",
+  "description": "An interactive graphing calculator built on mallory-math.",
   "private": true,
   "type": "module",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnhenry/mallory-graph.git"
+  },
   "engines": {
     "node": ">=22.12.0"
   },

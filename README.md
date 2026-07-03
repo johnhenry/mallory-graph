@@ -1,9 +1,10 @@
 # mallory-graph
 
-An interactive graphing calculator built on [mallory-ts](https://github.com/johnhenry/mallory-ts).
-
-See the grand plan at `/home/christopher/.claude/plans/floating-roaming-wirth.md`
-for architecture, phasing, and design rationale.
+An interactive graphing calculator built on [mallory-math](https://github.com/johnhenry/mallory)
+(the [`mallory-math`](https://www.npmjs.com/package/mallory-math) npm package): a reactive
+`CellGraph` core drives sampling/differentiation/integration through `Symbolic`, rendered via
+Canvas2D (curves, inequality shading, area-under-curve) and Three.js (3D surfaces). Also includes
+a natural-language query layer, a linear system-of-equations solver, and MP4/GIF export.
 
 ## Development
 
@@ -39,7 +40,7 @@ filter (which matches on that `\0` prefix) never claims it, and the build
 falls through to the filesystem loader and throws ENOENT. This reproduces
 across the *entire* version range that ships import-protection (1.165.0
 through at least 1.168.27), with zero custom code involved (a bare
-`createServerFn` doc example triggers it) — it is not specific to mallory-ts
+`createServerFn` doc example triggers it) — it is not specific to mallory-math
 or anything in this app. Pinning to a version *before* import-protection
 (e.g. 1.145.4) does not help either — that range hits a different, older,
 equally-blocking bug instead ([#4022](https://github.com/TanStack/router/issues/4022)).
