@@ -11,7 +11,6 @@ import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { DEFAULT_GRAPH_STATE, decodeGraphState, encodeGraphState, type GraphState } from "../lib/graph-state.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { resolveNaturalLanguageQuery } from "../lib/nl-query.ts";
-import { evaluateExprAsRational } from "../lib/rational-eval.ts";
 import { drawFilledArea, drawPath, drawPoint, drawRegionMask, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
@@ -122,7 +121,7 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
       // changes for the vast majority of non-inequality inputs. Samples at
       // the same resolution/grid as `ids.path`. `ids.exact`/`ids.derivative`
       // already degrade gracefully for a `cmp` top-level expr via their own
-      // try/catch (evaluateExprAsRational/differentiateSteps just don't
+      // try/catch (Symbolic.evaluateExact/differentiateSteps just don't
       // apply usefully to a bare comparison) -- no new scaffolding needed
       // there.
       graph.define(ids.regionMask, (): boolean[] | null => {
@@ -164,7 +163,7 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
           const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
           const env: Record<string, Rational> = { [AXIS_VARIABLE]: Rational.fromNumber(x) };
           for (const [name, value] of Object.entries(params)) env[name] = Rational.fromNumber(value);
-          return evaluateExprAsRational(expr, env).toString();
+          return Symbolic.evaluateExact(expr, env).toString();
         } catch {
           return null;
         }

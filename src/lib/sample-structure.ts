@@ -1,7 +1,6 @@
 import { Symbolic, type Expr } from "mallory-math";
 import type { FiniteStructure } from "./finite-structure.ts";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
-import { evaluateExprOverStructure } from "./structure-eval.ts";
 
 export interface ScatterPoint {
   x: number;
@@ -25,7 +24,7 @@ export function sampleStructureExpr(
   const points: ScatterPoint[] = [];
   for (const x of finite.elements) {
     try {
-      const y = evaluateExprOverStructure(parsed, finite.structure, { ...params, [variable]: x });
+      const y = Symbolic.evaluateOverStructure(parsed, finite.structure, { ...params, [variable]: x });
       if (Number.isNaN(y)) continue;
       points.push({ x, y });
     } catch {
