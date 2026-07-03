@@ -9,7 +9,10 @@ import { FUNCTION_NAMES } from "mallory-math";
  * `pi`/`e` constants its own parser special-cases — not StringEvaluator's
  * environment, since this preprocessor only feeds the Symbolic fast path.
  * Unrecognized multi-letter runs (`xy`) split into single-char variables
- * multiplied together, matching GeoGebra/Desmos convention.
+ * multiplied together, matching GeoGebra/Desmos convention. A run that starts
+ * with a recognized name but keeps going (`sind`, `pix`) is genuinely
+ * ambiguous — is it `sin` times `d`, or a mistyped/undeclared multi-letter
+ * variable? — so it throws instead of silently picking an interpretation.
  */
 
 interface KnownName {
@@ -67,6 +70,16 @@ function tokenize(source: string): Token[] {
     if (/^[a-zA-Z_]/.test(rest)) {
       const known = KNOWN_NAMES.find((k) => rest.startsWith(k.name));
       if (known) {
+        const next = rest[known.name.length];
+        if (next !== undefined && /[a-zA-Z0-9_]/.test(next)) {
+          const run = (/^[a-zA-Z_][a-zA-Z0-9_]*/.exec(rest) as RegExpExecArray)[0];
+          const rest_ = run.slice(known.name.length);
+          throw new Error(
+            `Ambiguous name "${run}" at position ${pos}: it starts with the recognized name "${known.name}" ` +
+              `but continues with "${rest_}". Insert an explicit "*" (e.g. "${known.name}*${rest_}") if you meant ` +
+              `"${known.name}" times a separate variable, or rename the variable to avoid the collision.`,
+          );
+        }
         tokens.push({ kind: "ident", text: known.name, callable: known.callable });
         pos += known.name.length;
       } else {

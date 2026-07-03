@@ -47,6 +47,18 @@ test("ignores whitespace between tokens", () => {
   assert.equal(preprocessImplicitMultiplication("2 x sin( x )"), "2*x*sin(x)");
 });
 
+test("throws on a run that starts with a known function name but keeps going", () => {
+  assert.throws(() => preprocessImplicitMultiplication("sind(x)"), /Ambiguous name "sind"/);
+});
+
+test("throws on a run that starts with a known constant but keeps going", () => {
+  assert.throws(() => preprocessImplicitMultiplication("pix"), /Ambiguous name "pix"/);
+});
+
+test("does not throw when a known name is immediately followed by an operator or paren", () => {
+  assert.equal(preprocessImplicitMultiplication("sin(x)+pi"), "sin(x)+pi");
+});
+
 test("preprocessed output actually parses and evaluates via Symbolic", () => {
   const preprocessed = preprocessImplicitMultiplication("2x sin(x)");
   const expr = Symbolic.parse(preprocessed);
