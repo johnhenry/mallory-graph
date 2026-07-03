@@ -20,6 +20,9 @@ function HomePage() {
       <p>
         <Link to="/surface-3d">3D surface view →</Link>
       </p>
+      <p>
+        <Link to="/systems">System of equations solver →</Link>
+      </p>
       <GraphCanvas />
     </div>
   );

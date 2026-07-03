@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SystemsRouteImport } from './routes/systems'
 import { Route as Surface3dRouteImport } from './routes/surface-3d'
 import { Route as LinkedRouteImport } from './routes/linked'
 import { Route as IndexRouteImport } from './routes/index'
 
+const SystemsRoute = SystemsRouteImport.update({
+  id: '/systems',
+  path: '/systems',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const Surface3dRoute = Surface3dRouteImport.update({
   id: '/surface-3d',
   path: '/surface-3d',
@@ -33,34 +39,45 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
   '/surface-3d': typeof Surface3dRoute
+  '/systems': typeof SystemsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
   '/surface-3d': typeof Surface3dRoute
+  '/systems': typeof SystemsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
   '/surface-3d': typeof Surface3dRoute
+  '/systems': typeof SystemsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/linked' | '/surface-3d'
+  fullPaths: '/' | '/linked' | '/surface-3d' | '/systems'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/linked' | '/surface-3d'
-  id: '__root__' | '/' | '/linked' | '/surface-3d'
+  to: '/' | '/linked' | '/surface-3d' | '/systems'
+  id: '__root__' | '/' | '/linked' | '/surface-3d' | '/systems'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LinkedRoute: typeof LinkedRoute
   Surface3dRoute: typeof Surface3dRoute
+  SystemsRoute: typeof SystemsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/systems': {
+      id: '/systems'
+      path: '/systems'
+      fullPath: '/systems'
+      preLoaderRoute: typeof SystemsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/surface-3d': {
       id: '/surface-3d'
       path: '/surface-3d'
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LinkedRoute: LinkedRoute,
   Surface3dRoute: Surface3dRoute,
+  SystemsRoute: SystemsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -40,6 +40,72 @@ export function drawPoint(
   ctx.restore();
 }
 
+/**
+ * Draw a translucent vertical-strip fill over every `true` entry of a
+ * region mask (one boolean per sample point across a viewport-width grid,
+ * same resolution as the curve it's shading). A grid-based fill, not an
+ * exact boundary-curve computation, matching the mask's own sampling
+ * resolution.
+ */
+export function drawRegionMask(
+  ctx: CanvasRenderingContext2D,
+  mask: boolean[],
+  viewport: Viewport,
+  width: number,
+  height: number,
+  color = "rgba(37, 99, 235, 0.15)",
+): void {
+  if (mask.length === 0) return;
+  const stripWidth = width / mask.length;
+  ctx.save();
+  ctx.fillStyle = color;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const x = viewport.xMin + (i / Math.max(1, mask.length - 1)) * (viewport.xMax - viewport.xMin);
+    const sx = toScreenX(x, viewport, width);
+    ctx.fillRect(sx - stripWidth / 2, 0, stripWidth, height);
+  }
+  ctx.restore();
+}
+
+/**
+ * Draw the area between a (possibly gap-broken) curve and y=0, one closed
+ * fill polygon per contiguous run -- each `moveTo`-delimited segment from
+ * `sampleExpr`'s gap-tolerant sampling gets its own polygon, so a
+ * discontinuous integrand shades disjoint regions correctly instead of one
+ * polygon spanning the gap.
+ */
+export function drawFilledArea(
+  ctx: CanvasRenderingContext2D,
+  path: MalloryPath,
+  viewport: Viewport,
+  width: number,
+  height: number,
+  color = "rgba(37, 99, 235, 0.25)",
+): void {
+  const zeroSy = toScreenY(0, viewport, height);
+  ctx.save();
+  ctx.fillStyle = color;
+  let i = 0;
+  while (i < path.commands.length) {
+    const runStart = i;
+    i++;
+    while (i < path.commands.length && path.commands[i]?.op === "lineTo") i++;
+    const run = path.commands.slice(runStart, i);
+    if (run.length === 0) continue;
+    const first = run[0];
+    const last = run[run.length - 1];
+    if (!first || !last) continue;
+    ctx.beginPath();
+    ctx.moveTo(toScreenX(first.x, viewport, width), zeroSy);
+    for (const cmd of run) ctx.lineTo(toScreenX(cmd.x, viewport, width), toScreenY(cmd.y, viewport, height));
+    ctx.lineTo(toScreenX(last.x, viewport, width), zeroSy);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 /** Draw a set of discrete data-space points as a scatter (used for finite-structure plots, e.g. GF(7)). */
 export function drawScatter(
   ctx: CanvasRenderingContext2D,

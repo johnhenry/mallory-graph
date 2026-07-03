@@ -34,3 +34,17 @@ test("a finer resolution samples more faces than a coarser one", () => {
   const fineFaces = fine.reduce((n, m) => n + m.faces.length, 0);
   assert.ok(fineFaces > coarseFaces);
 });
+
+test("drops faces touching a singularity instead of poisoning them with a non-finite vertex", () => {
+  // grid crosses x=0 and y=0, where 1/(x*y) is undefined
+  const singular = sampleSurface("1/(x*y)", { min: -1, max: 1 }, { min: -1, max: 1 }, 4);
+  const nonSingular = sampleSurface("x+y", { min: -1, max: 1 }, { min: -1, max: 1 }, 4);
+  for (const mesh of singular) {
+    for (const face of mesh.faces) {
+      for (const vertex of face) assert.ok(Number.isFinite(vertex.z));
+    }
+  }
+  const singularFaces = singular.reduce((n, m) => n + m.faces.length, 0);
+  const nonSingularFaces = nonSingular.reduce((n, m) => n + m.faces.length, 0);
+  assert.ok(singularFaces < nonSingularFaces);
+});

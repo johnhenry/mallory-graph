@@ -23,6 +23,10 @@ export function cellIds(cellId: string) {
     scatter: `scatter:${cellId}`,
     derivative: `derivative:${cellId}`,
     timelineDuration: `timelineDuration:${cellId}`,
+    regionMask: `regionMask:${cellId}`,
+    areaLower: `areaLower:${cellId}`,
+    areaUpper: `areaUpper:${cellId}`,
+    area: `area:${cellId}`,
     param: (name: string) => `param:${cellId}:${name}`,
     track: (name: string) => `track:${cellId}:${name}`,
   };
@@ -50,3 +54,20 @@ export function cellIds3D(cellId: string) {
 }
 
 export type CellIds3D = ReturnType<typeof cellIds3D>;
+
+/**
+ * Cell-id namespacing for a system-of-equations solver panel
+ * (SystemSolverPanel.tsx) -- a different input shape entirely from
+ * `cellIds`'s single expression + axis variable (N equation strings + N
+ * variable names), so it gets its own small, purpose-specific set rather
+ * than reusing/extending `cellIds`.
+ */
+export function cellIdsSystem(cellId: string) {
+  return {
+    equations: `sysEquations:${cellId}`,
+    variables: `sysVariables:${cellId}`,
+    solution: `sysSolution:${cellId}`,
+  };
+}
+
+export type CellIdsSystem = ReturnType<typeof cellIdsSystem>;

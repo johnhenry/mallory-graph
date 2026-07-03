@@ -12,8 +12,8 @@ import { DEFAULT_GRAPH_STATE, decodeGraphState, encodeGraphState, type GraphStat
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { resolveNaturalLanguageQuery } from "../lib/nl-query.ts";
 import { evaluateExprAsRational } from "../lib/rational-eval.ts";
-import { drawPath, drawPoint, drawScatter, type Viewport } from "../lib/render-path.ts";
-import { sampleExpr } from "../lib/sample-function.ts";
+import { drawFilledArea, drawPath, drawPoint, drawRegionMask, drawScatter, type Viewport } from "../lib/render-path.ts";
+import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
 import { interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/timeline.ts";
 import { TexSpan } from "./TexSpan.tsx";
@@ -42,6 +42,11 @@ interface CurvePoint {
 interface Derivative {
   steps: DifferentiationStep[];
   result: Expr;
+}
+
+interface AreaResult {
+  value: number;
+  path: Path2D;
 }
 
 /**
@@ -112,6 +117,24 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
         return lastGoodPath;
       });
 
+      // 1D inequality shading: only populated when the top-level parsed
+      // expression is a `cmp` node (e.g. "sin(x) < cos(x)"), so nothing
+      // changes for the vast majority of non-inequality inputs. Samples at
+      // the same resolution/grid as `ids.path`. `ids.exact`/`ids.derivative`
+      // already degrade gracefully for a `cmp` top-level expr via their own
+      // try/catch (evaluateExprAsRational/differentiateSteps just don't
+      // apply usefully to a bare comparison) -- no new scaffolding needed
+      // there.
+      graph.define(ids.regionMask, (): boolean[] | null => {
+        try {
+          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+          const params = graph.get<Record<string, number>>(ids.params);
+          return sampleRegionMask(expr, { min: viewport.xMin, max: viewport.xMax }, RESOLUTION, AXIS_VARIABLE, params);
+        } catch {
+          return null;
+        }
+      });
+
       graph.set(ids.pointX, (viewport.xMin + viewport.xMax) / 2);
 
       // A handle dragged along the curve: x follows the pointer, y is
@@ -156,6 +179,36 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
         } catch {
           return null;
         }
+      });
+
+      // Area-under-curve: bounds are plain fixed numeric inputs, not the
+      // auto-inferred-slider mechanism -- they aren't symbols discovered in
+      // the expression, they're independent numeric knobs, so repurposing
+      // the free-var/slider machinery would pollute that abstraction.
+      graph.set(ids.areaLower, viewport.xMin);
+      graph.set(ids.areaUpper, (viewport.xMin + viewport.xMax) / 2);
+
+      let lastGoodArea: AreaResult | null = null;
+      graph.define(ids.area, (): AreaResult | null => {
+        try {
+          const lower = graph.get<number>(ids.areaLower);
+          const upper = graph.get<number>(ids.areaUpper);
+          const params = graph.get<Record<string, number>>(ids.params);
+          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+          const value = Symbolic.integrateDefinite(expr, lower, upper, AXIS_VARIABLE, params);
+          const path = sampleExpr(
+            expr,
+            { min: Math.min(lower, upper), max: Math.max(lower, upper) },
+            RESOLUTION,
+            AXIS_VARIABLE,
+            params,
+          );
+          lastGoodArea = { value, path };
+        } catch {
+          // Leave the last good area/shading on a mid-typing parse error, or
+          // an out-of-domain bound (e.g. integrating straight through an asymptote).
+        }
+        return lastGoodArea;
       });
 
       graph.set(ids.structure, null as number | null);
@@ -230,6 +283,10 @@ export function GraphCanvas({
   const modulus = useCell<number | null>(graph, ids.structure);
   const scatter = useCell<ScatterPoint[] | null>(graph, ids.scatter);
   const derivative = useCell<Derivative | null>(graph, ids.derivative);
+  const regionMask = useCell<boolean[] | null>(graph, ids.regionMask);
+  const areaLower = useCell<number>(graph, ids.areaLower);
+  const areaUpper = useCell<number>(graph, ids.areaUpper);
+  const area = useCell<AreaResult | null>(graph, ids.area);
   const time = useCell<number>(graph, TIME_CELL);
   const duration = useCell<number>(graph, durationCellId ?? ids.timelineDuration);
   const exprValue = useCell<string>(graph, ids.expr);
@@ -262,6 +319,7 @@ export function GraphCanvas({
   }, [graph, freeVars]);
   const [mode, setMode] = useState<"float" | "exact">("float");
   const [showSteps, setShowSteps] = useState(false);
+  const [showArea, setShowArea] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -422,10 +480,13 @@ export function GraphCanvas({
     if (scatter) {
       drawScatter(ctx, scatter, viewport, WIDTH, HEIGHT);
     } else {
+      // Shading/fill draws before the curve/handle, so those render on top.
+      if (regionMask) drawRegionMask(ctx, regionMask, viewport, WIDTH, HEIGHT);
+      if (showArea && area) drawFilledArea(ctx, area.path, viewport, WIDTH, HEIGHT);
       drawPath(ctx, path, viewport, WIDTH, HEIGHT);
       if (point) drawPoint(ctx, point, viewport, WIDTH, HEIGHT);
     }
-  }, [path, point, scatter, viewport]);
+  }, [path, point, scatter, viewport, regionMask, showArea, area]);
 
   function handlePointerDown(e: PointerEvent<HTMLCanvasElement>) {
     if (!point || modulus !== null) return;
@@ -605,6 +666,38 @@ export function GraphCanvas({
                 </li>
               ))}
             </ol>
+          )}
+        </div>
+      )}
+      {modulus === null && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <button type="button" onClick={() => setShowArea((v) => !v)}>
+            {showArea ? "▾" : "▸"} Area under curve
+          </button>
+          {showArea && (
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0.25rem 0" }}>
+              <label>
+                from{" "}
+                <input
+                  type="number"
+                  value={areaLower ?? 0}
+                  step={0.1}
+                  style={{ width: "6ch" }}
+                  onChange={(e) => graph.set(ids.areaLower, Number(e.target.value))}
+                />
+              </label>
+              <label>
+                to{" "}
+                <input
+                  type="number"
+                  value={areaUpper ?? 0}
+                  step={0.1}
+                  style={{ width: "6ch" }}
+                  onChange={(e) => graph.set(ids.areaUpper, Number(e.target.value))}
+                />
+              </label>
+              <span>Area = {area ? area.value.toFixed(4) : "—"}</span>
+            </div>
           )}
         </div>
       )}

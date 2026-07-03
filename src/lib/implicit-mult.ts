@@ -61,6 +61,21 @@ function tokenize(source: string): Token[] {
       pos++;
       continue;
     }
+    if (ch === "<" || ch === ">" || ch === "=" || ch === "!") {
+      const two = rest.slice(0, 2);
+      if (two === "<=" || two === ">=" || two === "==" || two === "!=") {
+        tokens.push({ kind: "op", text: two });
+        pos += 2;
+        continue;
+      }
+      if (ch === "<" || ch === ">" || ch === "=") {
+        tokens.push({ kind: "op", text: ch });
+        pos++;
+        continue;
+      }
+      // a bare "!" not followed by "=" falls through to the "Unexpected
+      // character" throw below -- Symbolic's cmp variant has no unary "not".
+    }
     const numMatch = /^\d+\.?\d*(?:[eE][+-]?\d+)?/.exec(rest);
     if (numMatch) {
       tokens.push({ kind: "num", text: numMatch[0] });

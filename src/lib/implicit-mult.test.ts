@@ -59,6 +59,28 @@ test("does not throw when a known name is immediately followed by an operator or
   assert.equal(preprocessImplicitMultiplication("sin(x)+pi"), "sin(x)+pi");
 });
 
+test("comparison operators are left unchanged (no implicit * inserted around them)", () => {
+  assert.equal(preprocessImplicitMultiplication("x<5"), "x<5");
+  assert.equal(preprocessImplicitMultiplication("x<=5"), "x<=5");
+  assert.equal(preprocessImplicitMultiplication("x>5"), "x>5");
+  assert.equal(preprocessImplicitMultiplication("x>=5"), "x>=5");
+  assert.equal(preprocessImplicitMultiplication("x==5"), "x==5");
+  assert.equal(preprocessImplicitMultiplication("x!=5"), "x!=5");
+});
+
+test("inserts * around implicit multiplication next to a comparison operator", () => {
+  assert.equal(preprocessImplicitMultiplication("2x<5"), "2*x<5");
+  assert.equal(preprocessImplicitMultiplication("2x>=3y"), "2*x>=3*y");
+});
+
+test("piecewise parses without tripping the ambiguous-name check, since it's now a known callable name", () => {
+  assert.equal(preprocessImplicitMultiplication("piecewise(x<0,-x,x)"), "piecewise(x<0,-x,x)");
+});
+
+test("regression: a genuinely ambiguous run still throws even with piecewise added to KNOWN_NAMES", () => {
+  assert.throws(() => preprocessImplicitMultiplication("piecewisex"), /Ambiguous name/);
+});
+
 test("preprocessed output actually parses and evaluates via Symbolic", () => {
   const preprocessed = preprocessImplicitMultiplication("2x sin(x)");
   const expr = Symbolic.parse(preprocessed);

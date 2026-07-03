@@ -36,3 +36,19 @@ test("returns null when the matched inner text fails to resolve", () => {
   // sin(x^2) has no elementary antiderivative -- Symbolic.integrate throws.
   assert.equal(resolveNaturalLanguageQuery("integral of sin(x^2)"), null);
 });
+
+test("resolves bounded 'integral of X from A to B' to a numeric value", () => {
+  const source = resolveNaturalLanguageQuery("integral of x^2 from 0 to 1");
+  assert.ok(source);
+  assert.ok(Math.abs(Number(source) - 1 / 3) < 1e-9);
+});
+
+test("resolves bounded 'definite integral of X from A to B'", () => {
+  const source = resolveNaturalLanguageQuery("definite integral of cos(x) from 0 to 1");
+  assert.ok(source);
+  assert.ok(Math.abs(Number(source) - Math.sin(1)) < 1e-9);
+});
+
+test("bare (unbounded) 'integral of' phrasing still matches after adding the bounded pattern first", () => {
+  assert.equal(resolveNaturalLanguageQuery("integral of cos(x)"), "sin(x)");
+});
