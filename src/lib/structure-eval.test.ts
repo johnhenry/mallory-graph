@@ -46,3 +46,30 @@ test("throws when a variable has no bound value", () => {
   const gf7 = Structure.integersModulo(7);
   assert.throws(() => evaluateExprOverStructure(parse("x+1"), gf7, {}));
 });
+
+// Symbolic.parse is used directly (not the local parse() helper) below --
+// implicit-mult's tokenizer doesn't yet handle comparison operators (that's
+// a separate, later change).
+test("eq/ne use the structure's own equality over Z/7Z", () => {
+  const gf7 = Structure.integersModulo(7);
+  // 3 mod 7 == 10 mod 7 (both 3), even though the raw literals differ
+  assert.equal(evaluateExprOverStructure(Symbolic.parse("3==10"), gf7, {}), 1);
+  assert.equal(evaluateExprOverStructure(Symbolic.parse("3!=10"), gf7, {}), 0);
+  assert.equal(evaluateExprOverStructure(Symbolic.parse("3==4"), gf7, {}), 0);
+});
+
+test("ordering comparisons throw over a structure with no general order", () => {
+  const gf7 = Structure.integersModulo(7);
+  assert.throws(() => evaluateExprOverStructure(Symbolic.parse("3<4"), gf7, {}));
+  assert.throws(() => evaluateExprOverStructure(Symbolic.parse("3<=4"), gf7, {}));
+  assert.throws(() => evaluateExprOverStructure(Symbolic.parse("3>4"), gf7, {}));
+  assert.throws(() => evaluateExprOverStructure(Symbolic.parse("3>=4"), gf7, {}));
+});
+
+test("piecewise branch selection uses structure.zero-equality", () => {
+  const gf7 = Structure.integersModulo(7);
+  const result = evaluateExprOverStructure(Symbolic.parse("piecewise(3==10, 5, 2)"), gf7, {});
+  assert.equal(result, 5);
+  const otherwise = evaluateExprOverStructure(Symbolic.parse("piecewise(3==4, 5, 2)"), gf7, {});
+  assert.equal(otherwise, 2);
+});

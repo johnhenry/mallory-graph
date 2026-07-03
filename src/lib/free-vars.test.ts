@@ -28,6 +28,21 @@ test("sorts collected free vars", () => {
   assert.deepEqual(collectFreeVars(parse("c*x+b+a"), "x"), ["a", "b", "c"]);
 });
 
+test("collects free vars inside a call2 node (regression -- this case was previously missing entirely)", () => {
+  assert.deepEqual(collectFreeVars(parse("atan2(k*x, m)"), "x"), ["k", "m"]);
+  assert.deepEqual(collectFreeVars(parse("min(x, a, b)"), "x"), ["a", "b"]);
+});
+
+test("collects free vars inside a cmp node", () => {
+  // Uses Symbolic.parse directly (not the local parse() helper) -- implicit-mult's
+  // tokenizer doesn't yet handle comparison operators (that's a separate, later change).
+  assert.deepEqual(collectFreeVars(Symbolic.parse("k*x < m"), "x"), ["k", "m"]);
+});
+
+test("collects free vars inside a piecewise node's branches and otherwise", () => {
+  assert.deepEqual(collectFreeVars(Symbolic.parse("piecewise(x<a, b, c)"), "x"), ["a", "b", "c"]);
+});
+
 test("integer-stepper names get a step-1 range", () => {
   assert.deepEqual(defaultSliderRange("n"), { min: -10, max: 10, step: 1, default: 1 });
   assert.deepEqual(defaultSliderRange("k"), { min: -10, max: 10, step: 1, default: 1 });

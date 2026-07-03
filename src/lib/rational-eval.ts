@@ -1,4 +1,4 @@
-import { Rational, type Expr } from "mallory-math";
+import { Rational, type CmpOp, type Expr } from "mallory-math";
 
 /**
  * Evaluates a Symbolic Expr exactly over Rational arithmetic, for the
@@ -36,5 +36,31 @@ export function evaluateExprAsRational(expr: Expr, env: Record<string, Rational>
       throw new Error(`"${expr.name}" is not exactly representable as a Rational`);
     case "call2":
       throw new Error(`"${expr.name}" is not exactly representable as a Rational`);
+    case "cmp": {
+      // cmp's result is always exactly {0,1} -- unlike func/call2, no need to
+      // throw; Rational already has an exact .compare().
+      const l = evaluateExprAsRational(expr.left, env);
+      const r = evaluateExprAsRational(expr.right, env);
+      const c = l.compare(r);
+      const truth = CMP_TRUTH[expr.op](c);
+      return truth ? Rational.One : Rational.Zero;
+    }
+    case "piecewise": {
+      for (const branch of expr.branches) {
+        if (!evaluateExprAsRational(branch.cond, env).isZero()) {
+          return evaluateExprAsRational(branch.expr, env);
+        }
+      }
+      return evaluateExprAsRational(expr.otherwise, env);
+    }
   }
 }
+
+const CMP_TRUTH: Record<CmpOp, (c: number) => boolean> = {
+  lt: (c) => c < 0,
+  le: (c) => c <= 0,
+  gt: (c) => c > 0,
+  ge: (c) => c >= 0,
+  eq: (c) => c === 0,
+  ne: (c) => c !== 0,
+};

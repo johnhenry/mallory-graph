@@ -18,6 +18,8 @@ export function collectFreeVars(expr: Expr, axisVariable: string): string[] {
       case "sub":
       case "mul":
       case "div":
+      case "call2": // pre-existing gap: this case was entirely missing (verified via typecheck-free `void`-returning switch)
+      case "cmp":
         walk(node.left);
         walk(node.right);
         return;
@@ -30,6 +32,13 @@ export function collectFreeVars(expr: Expr, axisVariable: string): string[] {
         return;
       case "func":
         walk(node.arg);
+        return;
+      case "piecewise":
+        for (const branch of node.branches) {
+          walk(branch.cond);
+          walk(branch.expr);
+        }
+        walk(node.otherwise);
         return;
     }
   }

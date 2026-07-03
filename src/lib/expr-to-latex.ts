@@ -1,6 +1,8 @@
-import type { BinaryFuncName, Expr, FuncName } from "mallory-math";
+import type { BinaryFuncName, CmpOp, Expr, FuncName } from "mallory-math";
 
-const PREC: Record<string, number> = { add: 1, sub: 1, mul: 2, div: 2, neg: 3, pow: 4 };
+const PREC: Record<string, number> = { add: 1, sub: 1, mul: 2, div: 2, neg: 3, pow: 4, cmp: 0 };
+
+const CMP_LATEX: Record<CmpOp, string> = { lt: "<", le: "\\leq", gt: ">", ge: "\\geq", eq: "=", ne: "\\neq" };
 
 // Functions with a standard bare LaTeX command, wrapped in plain parens
 // (matching this file's existing convention, not mallory-math's own \left\right style).
@@ -94,6 +96,19 @@ export function exprToLatex(expr: Expr, parentPrec = 0): string {
       return wrap(`${exprToLatex(expr.left, PREC.mul)} \\cdot ${exprToLatex(expr.right, PREC.mul + 1)}`, PREC.mul, parentPrec);
     case "div":
       return `\\frac{${exprToLatex(expr.left, 0)}}{${exprToLatex(expr.right, 0)}}`;
+    case "cmp":
+      return wrap(
+        `${exprToLatex(expr.left, PREC.cmp + 1)} ${CMP_LATEX[expr.op]} ${exprToLatex(expr.right, PREC.cmp + 1)}`,
+        PREC.cmp,
+        parentPrec,
+      );
+    case "piecewise": {
+      const rows = expr.branches
+        .map((b) => `${exprToLatex(b.expr, 0)} & \\text{if } ${exprToLatex(b.cond, 0)}`)
+        .concat(`${exprToLatex(expr.otherwise, 0)} & \\text{otherwise}`)
+        .join(" \\\\ ");
+      return `\\begin{cases} ${rows} \\end{cases}`;
+    }
   }
 }
 

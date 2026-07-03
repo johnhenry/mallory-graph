@@ -33,3 +33,19 @@ test("parenthesizes a sum nested inside a product", () => {
 test("parenthesizes a sum used as a power base", () => {
   assert.equal(latex("(x+1)^2"), "\\left(x + 1\\right)^{2}");
 });
+
+test("renders each comparison operator with its LaTeX symbol", () => {
+  assert.equal(latex("x<3"), "x < 3");
+  assert.equal(latex("x<=3"), "x \\leq 3");
+  assert.equal(latex("x>3"), "x > 3");
+  assert.equal(latex("x>=3"), "x \\geq 3");
+  assert.equal(latex("x==3"), "x = 3");
+  assert.equal(latex("x!=3"), "x \\neq 3");
+});
+
+test("renders piecewise as a KaTeX cases block", () => {
+  const result = latex("piecewise(x<0, -x, x)");
+  assert.match(result, /\\begin\{cases\}/);
+  assert.match(result, /\\text\{otherwise\}/);
+  assert.match(result, /\\end\{cases\}/);
+});

@@ -1,5 +1,7 @@
 import { Structure, type Expr } from "mallory-math";
 
+const ORDERING_OPS = new Set(["lt", "le", "gt", "ge"]);
+
 /**
  * Evaluates a Symbolic Expr by folding it through an arbitrary {@link Structure}'s
  * own `add`/`multiply`/`negative`/`divide` instead of native JS math, so plotting
@@ -48,5 +50,27 @@ export function evaluateExprOverStructure<T>(expr: Expr, structure: Structure<T>
       throw new Error(`"${expr.name}" has no meaning over this structure`);
     case "call2":
       throw new Error(`"${expr.name}" has no meaning over this structure`);
+    case "cmp": {
+      // eq/ne are well-defined over any Structure via .equality(); ordering
+      // comparisons have no general meaning (several structures, e.g.
+      // quaternions, have no order compatible with their ring operations).
+      if (ORDERING_OPS.has(expr.op)) {
+        throw new Error(`Ordering comparisons ("${expr.op}") have no general meaning over this structure`);
+      }
+      const l = evaluateExprOverStructure(expr.left, structure, env);
+      const r = evaluateExprOverStructure(expr.right, structure, env);
+      const equal = structure.equality(l, r);
+      const truth = expr.op === "eq" ? equal : !equal;
+      return truth ? structure.one : structure.zero;
+    }
+    case "piecewise": {
+      for (const branch of expr.branches) {
+        const condValue = evaluateExprOverStructure(branch.cond, structure, env);
+        if (!structure.equality(condValue, structure.zero)) {
+          return evaluateExprOverStructure(branch.expr, structure, env);
+        }
+      }
+      return evaluateExprOverStructure(expr.otherwise, structure, env);
+    }
   }
 }
