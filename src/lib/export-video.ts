@@ -23,7 +23,7 @@
  * the rendered buffer forever.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { Symbolic } from "mallory-ts";
+import { Symbolic } from "mallory-math";
 import { Axes, alwaysRedraw, render } from "ecmanim/node";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { interpolateKeyframes, type Keyframe } from "./timeline.ts";

@@ -1,4 +1,4 @@
-import { Symbolic, type Expr } from "mallory-ts";
+import { Symbolic, type Expr } from "mallory-math";
 import type { FiniteStructure } from "./finite-structure.ts";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { evaluateExprOverStructure } from "./structure-eval.ts";

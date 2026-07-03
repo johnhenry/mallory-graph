@@ -11,7 +11,7 @@ function HomePage() {
     <div>
       <h1>mallory-graph</h1>
       <p>
-        <code>y = {DEFAULT_GRAPH_STATE.cells[0].source}</code>, sampled and plotted through mallory-ts's reactive
+        <code>y = {DEFAULT_GRAPH_STATE.cells[0].source}</code>, sampled and plotted through mallory-math's reactive
         core (<code>Symbolic.compile</code> → <code>CellGraph</code> → <code>GraphUtils.vectorToCurve</code>).
       </p>
       <p>

@@ -1,4 +1,4 @@
-import { Structure } from "mallory-ts";
+import { Structure } from "mallory-math";
 
 /** A finite algebraic structure paired with an explicit enumeration of its elements, since {@link Structure} itself has no enumeration API. */
 export interface FiniteStructure {

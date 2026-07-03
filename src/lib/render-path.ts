@@ -1,9 +1,9 @@
-import type { Path2D as MalloryPath } from "mallory-ts";
+import type { Path2D as MalloryPath } from "mallory-math";
 import { toScreenX, toScreenY, type Viewport } from "./viewport.ts";
 
 export type { Viewport } from "./viewport.ts";
 
-/** Draw a mallory-ts Path2D (moveTo/lineTo commands in data space) onto a real Canvas2D context. */
+/** Draw a mallory-math Path2D (moveTo/lineTo commands in data space) onto a real Canvas2D context. */
 export function drawPath(ctx: CanvasRenderingContext2D, path: MalloryPath, viewport: Viewport, width: number, height: number): void {
   ctx.save();
   ctx.strokeStyle = `#${path.stroke.color.toString(16).padStart(6, "0")}`;

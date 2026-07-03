@@ -1,4 +1,4 @@
-import { Symbolic, type Mesh } from "mallory-ts";
+import { Symbolic, type Mesh } from "mallory-math";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";

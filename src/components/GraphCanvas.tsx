@@ -1,4 +1,4 @@
-import { Rational, Symbolic, type DifferentiationStep, type Expr, type Path2D } from "mallory-ts";
+import { Rational, Symbolic, type DifferentiationStep, type Expr, type Path2D } from "mallory-math";
 import { useEffect, useRef, useState, type FormEvent, type PointerEvent } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";

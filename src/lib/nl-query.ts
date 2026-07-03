@@ -7,7 +7,7 @@
  * through to null (treat the input as a normal expression) on anything
  * that doesn't match a known phrasing, or that fails to resolve.
  */
-import { Symbolic } from "mallory-ts";
+import { Symbolic } from "mallory-math";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 
 interface QueryPattern {

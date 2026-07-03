@@ -1,4 +1,4 @@
-import { Rational, type Expr } from "mallory-ts";
+import { Rational, type Expr } from "mallory-math";
 
 /**
  * Evaluates a Symbolic Expr exactly over Rational arithmetic, for the
@@ -33,6 +33,8 @@ export function evaluateExprAsRational(expr: Expr, env: Record<string, Rational>
     case "neg":
       return evaluateExprAsRational(expr.arg, env).negate();
     case "func":
+      throw new Error(`"${expr.name}" is not exactly representable as a Rational`);
+    case "call2":
       throw new Error(`"${expr.name}" is not exactly representable as a Rational`);
   }
 }

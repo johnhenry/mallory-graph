@@ -1,8 +1,11 @@
+import { FUNCTION_NAMES } from "mallory-math";
+
 /**
  * Inserts explicit `*` at adjacency boundaries so expressions like `2x sin(x)`
  * parse the same way they would in Desmos/GeoGebra, before the string ever
  * reaches Symbolic.parse (whose grammar requires an explicit `*` between
- * factors). Known names are seeded from Symbolic's FuncName union plus the
+ * factors). Known names are seeded from Symbolic's own `FUNCTION_NAMES` export
+ * (every unary/binary function name and alias it recognizes) plus the
  * `pi`/`e` constants its own parser special-cases — not StringEvaluator's
  * environment, since this preprocessor only feeds the Symbolic fast path.
  * Unrecognized multi-letter runs (`xy`) split into single-char variables
@@ -15,12 +18,7 @@ interface KnownName {
 }
 
 const KNOWN_NAMES: KnownName[] = [
-  { name: "sqrt", callable: true },
-  { name: "sin", callable: true },
-  { name: "cos", callable: true },
-  { name: "tan", callable: true },
-  { name: "exp", callable: true },
-  { name: "ln", callable: true },
+  ...FUNCTION_NAMES.map((name) => ({ name, callable: true })),
   { name: "pi", callable: false },
   { name: "e", callable: false },
 ].sort((a, b) => b.name.length - a.name.length);
@@ -30,6 +28,7 @@ type Token =
   | { kind: "ident"; text: string; callable: boolean }
   | { kind: "lparen" }
   | { kind: "rparen" }
+  | { kind: "comma" }
   | { kind: "op"; text: string };
 
 function tokenize(source: string): Token[] {
@@ -46,6 +45,11 @@ function tokenize(source: string): Token[] {
     }
     if (ch === ")") {
       tokens.push({ kind: "rparen" });
+      pos++;
+      continue;
+    }
+    if (ch === ",") {
+      tokens.push({ kind: "comma" });
       pos++;
       continue;
     }
@@ -90,6 +94,8 @@ function tokenText(t: Token): string {
       return "(";
     case "rparen":
       return ")";
+    case "comma":
+      return ",";
     case "op":
       return t.text;
     case "num":

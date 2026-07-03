@@ -1,4 +1,4 @@
-import { Structure, type Expr } from "mallory-ts";
+import { Structure, type Expr } from "mallory-math";
 
 /**
  * Evaluates a Symbolic Expr by folding it through an arbitrary {@link Structure}'s
@@ -45,6 +45,8 @@ export function evaluateExprOverStructure<T>(expr: Expr, structure: Structure<T>
     case "neg":
       return structure.negative(evaluateExprOverStructure(expr.arg, structure, env));
     case "func":
+      throw new Error(`"${expr.name}" has no meaning over this structure`);
+    case "call2":
       throw new Error(`"${expr.name}" has no meaning over this structure`);
   }
 }

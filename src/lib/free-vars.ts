@@ -1,4 +1,4 @@
-import type { Expr } from "mallory-ts";
+import type { Expr } from "mallory-math";
 
 /**
  * Tree-walks a Symbolic Expr collecting every `var` node name except the

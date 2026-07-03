@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Structure, Symbolic } from "mallory-ts";
+import { Structure, Symbolic } from "mallory-math";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { evaluateExprOverStructure } from "./structure-eval.ts";
 

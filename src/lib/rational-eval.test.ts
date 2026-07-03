@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Rational, Symbolic } from "mallory-ts";
+import { Rational, Symbolic } from "mallory-math";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { evaluateExprAsRational } from "./rational-eval.ts";
 
