@@ -15,7 +15,9 @@ function MultiPage() {
         separate canvas. v1 supports plotting and free-variable sliders per row; point-dragging, exact mode,
         derivative steps, area/region shading, and finite-structure scatter stay single-expression-only for now (see{" "}
         <code>GraphCanvas</code>). URL-state persistence (reload-and-restore, share-by-link) isn't wired up for this
-        view yet either — that's the next extension once this core capability is stable.
+        view yet either — that's the next extension once this core capability is stable. Root crossings (where a
+        curve meets y=0) are marked automatically, via a declarative "condition" cell decoupled from the drawing
+        decision — the same Open MCT-inspired pattern the roadmap flagged for flagging points of interest generally.
       </p>
       <p>
         <Link to="/">← back</Link>

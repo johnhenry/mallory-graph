@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Symbolic } from "mallory-math";
-import { sampleExpr, sampleExprAdaptive, sampleRegionMask } from "./sample-function.ts";
+import { findRootCrossings, sampleExpr, sampleExprAdaptive, sampleRegionMask } from "./sample-function.ts";
 
 test("samples a plain function of x with no params", () => {
   const path = sampleExpr("x^2", { min: -2, max: 2 }, 5);
@@ -63,6 +63,32 @@ test("sampleExprAdaptive still produces gaps at singularities (does not force a 
   const moveTos = path.commands.filter((c) => c.op === "moveTo");
   assert.equal(moveTos.length, 3);
   assert.ok(path.commands.every((c) => Number.isFinite(c.x) && Number.isFinite(c.y)));
+});
+
+test("findRootCrossings finds the two roots of x^2-4 (a resolution-9 grid over [-3,3])", () => {
+  const path = sampleExpr("x^2-4", { min: -3, max: 3 }, 13);
+  const roots = findRootCrossings(path);
+  const xs = roots.map((r) => r.x).sort((a, b) => a - b);
+  assert.equal(xs.length, 2);
+  assert.ok(Math.abs((xs[0] as number) - -2) < 0.5);
+  assert.ok(Math.abs((xs[1] as number) - 2) < 0.5);
+});
+
+test("findRootCrossings finds no roots for a curve that never crosses zero", () => {
+  const path = sampleExpr("x^2+1", { min: -3, max: 3 }, 13);
+  assert.equal(findRootCrossings(path).length, 0);
+});
+
+test("findRootCrossings does not report a crossing across a moveTo (gap) boundary", () => {
+  // 1/(x^2-1) has genuine sign changes around its two asymptotes at x=-1,1,
+  // each of which starts a new moveTo run rather than a real interpolatable
+  // root -- assert every reported root is far from ±1 (the singularities),
+  // not merely that the count is some specific number.
+  const path = sampleExpr("1/(x^2-1)", { min: -2, max: 2 }, 9);
+  for (const r of findRootCrossings(path)) {
+    assert.ok(Math.abs(r.x - 1) > 0.4);
+    assert.ok(Math.abs(r.x + 1) > 0.4);
+  }
 });
 
 test("sampleRegionMask returns null for a non-cmp expression", () => {

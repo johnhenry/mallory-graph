@@ -2,7 +2,7 @@ import type { Path2D } from "mallory-math";
 import { useEffect, useRef } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsMultiRow, EXPRESSION_LIST_CELL, VIEWPORT_CELL } from "../lib/cell-ids.ts";
-import { drawExpressionLayer, type Viewport } from "../lib/render-path.ts";
+import { drawExpressionLayer, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { ExpressionRow } from "./ExpressionRow.tsx";
 import { useCell } from "../lib/use-cell.ts";
 
@@ -85,6 +85,10 @@ export function GraphCanvasMulti() {
           const path = graph.get<Path2D>(ids.path);
           const visible = graph.get<boolean>(ids.visible);
           drawExpressionLayer(ctx, path, visible, viewport, WIDTH, HEIGHT);
+          if (visible) {
+            const roots = graph.get<{ x: number; y: number }[]>(ids.roots);
+            if (roots.length > 0) drawScatter(ctx, roots, viewport, WIDTH, HEIGHT, 4, "#142033");
+          }
         } catch {
           // A row whose cells haven't been registered yet (ExpressionRow
           // hasn't mounted this render pass) -- skip it this frame, it'll

@@ -153,3 +153,28 @@ export function sampleRegionMask(
   }
   return mask;
 }
+
+/**
+ * Flags where a sampled path crosses y=0, by linear-interpolating between
+ * each adjacent pair of points whose y-values differ in sign. A declarative
+ * "condition" derived from the curve's own sampled data, decoupled from how
+ * (or whether) a consumer draws it -- the Open MCT-inspired
+ * condition-object/styling-consumer pattern from the research roadmap,
+ * applied to the one concrete case of "this curve crosses zero here."
+ * `moveTo` commands (the start of a new gap-tolerant run -- see
+ * `sampleExpr`) are skipped as a *left* endpoint of a pair, since a
+ * `moveTo` means the previous run ended at a singularity/undefined point,
+ * not a real sign change into this new run.
+ */
+export function findRootCrossings(path: Path2D): { x: number; y: number }[] {
+  const roots: { x: number; y: number }[] = [];
+  for (let i = 1; i < path.commands.length; i++) {
+    const prev = path.commands[i - 1];
+    const curr = path.commands[i];
+    if (!prev || !curr || curr.op !== "lineTo") continue;
+    if (prev.y >= 0 === curr.y >= 0) continue;
+    const t = prev.y / (prev.y - curr.y);
+    roots.push({ x: prev.x + t * (curr.x - prev.x), y: 0 });
+  }
+  return roots;
+}

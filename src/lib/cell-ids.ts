@@ -139,6 +139,7 @@ export function cellIdsMultiRow(cellId: string) {
     freeVars: `multiFreeVars:${cellId}`,
     params: `multiParams:${cellId}`,
     path: `multiPath:${cellId}`,
+    roots: `multiRoots:${cellId}`,
     param: (name: string) => `multiParam:${cellId}:${name}`,
   };
 }

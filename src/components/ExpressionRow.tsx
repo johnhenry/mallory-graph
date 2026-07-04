@@ -5,7 +5,7 @@ import { cellIdsMultiRow, VIEWPORT_CELL } from "../lib/cell-ids.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import type { Viewport } from "../lib/render-path.ts";
-import { sampleExprAdaptive } from "../lib/sample-function.ts";
+import { findRootCrossings, sampleExprAdaptive } from "../lib/sample-function.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { MathInput } from "./MathInput.tsx";
 
@@ -77,6 +77,12 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
         },
         { auxiliary: true },
       );
+
+      // A declarative "condition" derived from the curve's own path, read
+      // by GraphCanvasMulti's draw loop to decide whether/how to mark root
+      // crossings -- the flag computation is decoupled from the drawing
+      // decision, the Open-MCT-inspired pattern from the research roadmap.
+      graph.define(ids.roots, () => findRootCrossings(graph.get(ids.path)), { auxiliary: true });
     }
   }
   return ids;
