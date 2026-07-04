@@ -8,6 +8,21 @@ test("set/get a raw source cell", () => {
   assert.equal(g.get("a"), 5);
 });
 
+test("has() returns true the instant a cell is merely read, even before it's ever been set/defined -- hasValue() does not", () => {
+  // This is the exact real-world footgun a production bug traced back to
+  // (ExpressionRow.tsx's init guard): a caller elsewhere in the app (e.g. a
+  // subscribeAll listener firing reentrant mid-render) reads a not-yet-
+  // initialized id via a bare get(), which silently ensure()s an empty
+  // record. A later "was this already initialized?" check that uses has()
+  // instead of hasValue() is fooled into skipping real initialization.
+  const g = new CellGraph();
+  assert.equal(g.has("never-touched"), false);
+  assert.equal(g.hasValue("never-touched"), false);
+  g.get("never-touched"); // a bare read, no set()/define() -- ensure()s an empty record as a side effect
+  assert.equal(g.has("never-touched"), true, "has() is fooled by the bare read");
+  assert.equal(g.hasValue("never-touched"), false, "hasValue() is not -- no real value was ever produced");
+});
+
 test("derived cell recomputes from its dependencies", () => {
   const g = new CellGraph();
   g.set("a", 2);

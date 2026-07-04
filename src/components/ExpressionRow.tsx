@@ -20,9 +20,22 @@ const AXIS_VARIABLE = "x";
  * for what's deliberately not ported here yet (point-drag, exact mode,
  * derivative steps, area/region shading, finite-structure scatter).
  *
- * Guarded by `!graph.has(ids.path)` (not just the mount ref) so mounting a
- * second ExpressionRow pointed at an already-populated row id is a safe
+ * Guarded by `!graph.hasValue(ids.path)` (not just the mount ref) so mounting
+ * a second ExpressionRow pointed at an already-populated row id is a safe
  * no-op, matching `useExpressionGraph`'s own convention in GraphCanvas.tsx.
+ * Deliberately `hasValue`, not `has`: `has()` returns true the instant
+ * *anything* reads a cell via `get()`, even before it's ever been set/
+ * defined (see CellGraph.hasValue's own doc comment) -- and something does:
+ * GraphCanvasMulti/NotebookGraphBlock's `graph.subscribeAll(redraw)` fires
+ * synchronously and reentrantly the moment `addRow()` writes the new row id
+ * into EXPRESSION_LIST_CELL (still mid-`addRow()`, before this component
+ * ever mounts), and `redraw()` immediately calls `graph.get(ids.path)` for
+ * every id in that list, including the brand-new one -- which `ensure()`s an
+ * empty cell record as a side effect. `has(ids.path)` then wrongly reads
+ * true when this component actually mounts moments later, skipping this
+ * entire block and leaving `freeVars` (and everything else) permanently
+ * undefined for that row. `hasValue()` isn't fooled by that stray touch,
+ * since it only turns true once a real compute has actually run.
  */
 type PathResult = { ok: true; path: ReturnType<typeof sampleExprAdaptive> } | { ok: false; message: string };
 
@@ -31,7 +44,7 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
   const ref = useRef(false);
   if (!ref.current) {
     ref.current = true;
-    if (!graph.has(ids.path)) {
+    if (!graph.hasValue(ids.path)) {
       graph.set(ids.strict, false, { auxiliary: true });
 
       graph.define(
