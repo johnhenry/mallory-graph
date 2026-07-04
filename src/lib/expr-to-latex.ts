@@ -109,6 +109,12 @@ export function exprToLatex(expr: Expr, parentPrec = 0): string {
         .join(" \\\\ ");
       return `\\begin{cases} ${rows} \\end{cases}`;
     }
+    // \sum_{}^{}/\prod_{}^{} are self-delimiting via their sub/superscript,
+    // same as \frac/\begin{cases} above -- never need outer parens.
+    case "sum":
+      return `\\sum_{${expr.variable}=${exprToLatex(expr.from, 0)}}^{${exprToLatex(expr.to, 0)}} ${exprToLatex(expr.body, 0)}`;
+    case "product":
+      return `\\prod_{${expr.variable}=${exprToLatex(expr.from, 0)}}^{${exprToLatex(expr.to, 0)}} ${exprToLatex(expr.body, 0)}`;
   }
 }
 

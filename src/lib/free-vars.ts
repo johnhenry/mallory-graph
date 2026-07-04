@@ -40,6 +40,17 @@ export function collectFreeVars(expr: Expr, axisVariable: string): string[] {
         }
         walk(node.otherwise);
         return;
+      case "sum":
+      case "product":
+        walk(node.from);
+        walk(node.to);
+        // node.variable is bound within node.body -- recurse via this same
+        // function (already excludes one bound name) then filter its result
+        // against the outer axisVariable before merging.
+        for (const name of collectFreeVars(node.body, node.variable)) {
+          if (name !== axisVariable) found.add(name);
+        }
+        return;
     }
   }
 
