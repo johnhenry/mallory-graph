@@ -1,7 +1,7 @@
 import { Symbolic } from "mallory-math";
 import { useEffect, useRef, useState } from "react";
 import type { CellGraph } from "../lib/cell-graph.ts";
-import { cellIdsMultiRow, VIEWPORT_CELL } from "../lib/cell-ids.ts";
+import { cellIdsMultiRow, notebookValueCellId, VIEWPORT_CELL } from "../lib/cell-ids.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import type { Viewport } from "../lib/render-path.ts";
@@ -39,7 +39,7 @@ const AXIS_VARIABLE = "x";
  */
 type PathResult = { ok: true; path: ReturnType<typeof sampleExprAdaptive> } | { ok: false; message: string };
 
-function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIdsMultiRow> {
+function useRowCells(graph: CellGraph, rowId: string, viewportCellId: string = VIEWPORT_CELL): ReturnType<typeof cellIdsMultiRow> {
   const ids = cellIdsMultiRow(rowId);
   const ref = useRef(false);
   if (!ref.current) {
@@ -61,12 +61,24 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
         { auxiliary: true },
       );
 
+      // A free variable sourced from a notebook "value" block (see
+      // cell-ids.ts's notebookValueCellId doc comment) reads live from that
+      // block's shared cell instead of this row's own independent slider
+      // cell -- registry-free: `hasValue` on the name-keyed cell IS the
+      // "does an earlier value block with this name exist" check. Inert
+      // for GraphCanvasMulti's own usage, where no `notebookValue:*` cell
+      // ever exists on that graph, so `hasValue` is always false there and
+      // every free variable falls back to today's local-slider path
+      // unchanged.
       graph.define(
         ids.params,
         () => {
           const names = graph.get<string[]>(ids.freeVars);
           const params: Record<string, number> = {};
-          for (const name of names) params[name] = graph.get<number>(ids.param(name));
+          for (const name of names) {
+            const externalId = notebookValueCellId(name);
+            params[name] = graph.hasValue(externalId) ? graph.get<number>(externalId) : graph.get<number>(ids.param(name));
+          }
           return params;
         },
         { auxiliary: true },
@@ -82,7 +94,7 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
         ids.pathResult,
         (): PathResult => {
           try {
-            const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+            const viewport = graph.get<Viewport>(viewportCellId);
             const params = graph.get<Record<string, number>>(ids.params);
             const color = graph.get<number>(ids.color);
             const source = graph.get<string>(ids.expr);
@@ -140,7 +152,7 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
         () => {
           if (!graph.get<boolean>(ids.showDerivative)) return null;
           try {
-            const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+            const viewport = graph.get<Viewport>(viewportCellId);
             const params = graph.get<Record<string, number>>(ids.params);
             const color = graph.get<number>(ids.color);
             const parsed = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
@@ -169,11 +181,13 @@ export interface ExpressionRowProps {
   graph: CellGraph;
   rowId: string;
   onRemove?: () => void;
+  /** Defaults to the shared GraphCanvasMulti VIEWPORT_CELL; NotebookGraphBlock passes its own per-block namespaced viewport cell id instead. */
+  viewportCellId?: string;
 }
 
 /** One row of a GraphCanvasMulti: a color swatch, a visibility toggle, the y= input, and any free-variable sliders it discovers. */
-export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
-  const ids = useRowCells(graph, rowId);
+export function ExpressionRow({ graph, rowId, onRemove, viewportCellId }: ExpressionRowProps) {
+  const ids = useRowCells(graph, rowId, viewportCellId);
   const expr = useCell<string>(graph, ids.expr);
   const color = useCell<number>(graph, ids.color);
   const visible = useCell<boolean>(graph, ids.visible);
@@ -192,6 +206,7 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
   // different component" guard and silently gets dropped.
   useEffect(() => {
     for (const name of freeVars) {
+      if (graph.hasValue(notebookValueCellId(name))) continue; // sourced externally -- no local slider cell to seed
       const id = ids.param(name);
       if (!graph.hasValue(id)) graph.set(id, defaultSliderRange(name).default);
     }
@@ -274,9 +289,15 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
           />{" "}
           f'
         </label>
-        {freeVars.map((name) => (
-          <ParamSlider key={name} graph={graph} paramId={ids.param(name)} name={name} />
-        ))}
+        {freeVars.map((name) =>
+          graph.hasValue(notebookValueCellId(name)) ? (
+            <span key={name} style={{ fontSize: "0.78rem", color: "#5b6b8c" }} title={`Sourced from the "${name}" value block`}>
+              {name} ← value block
+            </span>
+          ) : (
+            <ParamSlider key={name} graph={graph} paramId={ids.param(name)} name={name} />
+          ),
+        )}
         {onRemove && (
           <button type="button" onClick={onRemove} title="Remove this expression">
             ✕

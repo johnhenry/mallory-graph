@@ -1,7 +1,7 @@
 import type { Path2D } from "mallory-math";
 import { useEffect, useRef } from "react";
-import { CellGraph } from "../lib/cell-graph.ts";
-import { cellIdsMultiRow, EXPRESSION_LIST_CELL, VIEWPORT_CELL } from "../lib/cell-ids.ts";
+import type { CellGraph } from "../lib/cell-graph.ts";
+import { cellIdsMultiRow, cellIdsNotebookBlock } from "../lib/cell-ids.ts";
 import { drawExpressionLayer, drawPath, type Viewport } from "../lib/render-path.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { ExpressionRow } from "./ExpressionRow.tsx";
@@ -12,44 +12,54 @@ const DEFAULT_VIEWPORT: Viewport = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 };
 const PALETTE = [0x2563eb, 0xdc2626, 0x16a34a];
 
 /**
- * A self-contained graph cell for the notebook surface (NotebookPanel.tsx):
- * its own private CellGraph, not the shared/URL-synced one GraphCanvasMulti
- * uses -- several independent notebook blocks on one page would otherwise
- * fight over window.location.hash. Reuses ExpressionRow/drawExpressionLayer
- * directly, the same reactive core as everywhere else in the app.
+ * A graph cell for the notebook surface (NotebookPanel.tsx): its own
+ * namespaced viewport/expression-list cells (see `cellIdsNotebookBlock`),
+ * but on the ONE `CellGraph` shared across every block in the document --
+ * not a private instance -- which is what lets a later block's expression
+ * reference an earlier "value" block's named cell (see NotebookPanel's own
+ * doc comment for the cross-reference mechanism). Reuses
+ * ExpressionRow/drawExpressionLayer directly, the same reactive core as
+ * everywhere else in the app.
  *
  * NON-GOALS (v1): no URL persistence, fork, save, or annotations for an
  * individual block (a notebook *document* could still be saved as a whole
- * -- see NotebookPanel's own doc comment); no cross-block cell references
- * (a later block reading an earlier block's value), which is the actual
- * defining feature of an Observable-style notebook -- each block here is
- * fully independent.
+ * -- see NotebookPanel's own doc comment); cross-referencing is limited to
+ * a named scalar "value" block, not another graph block's entire curve.
  */
-export function NotebookGraphBlock({ initialSource = "x" }: { initialSource?: string }) {
-  const graphRef = useRef<CellGraph | null>(null);
-  if (!graphRef.current) {
-    const graph = new CellGraph();
-    graph.set(VIEWPORT_CELL, DEFAULT_VIEWPORT, { auxiliary: true });
-    const id = crypto.randomUUID();
-    const ids = cellIdsMultiRow(id);
-    graph.set(ids.expr, initialSource);
-    graph.set(ids.color, PALETTE[0] as number);
-    graph.set(ids.visible, true);
-    graph.set(EXPRESSION_LIST_CELL, [id], { auxiliary: true });
-    graphRef.current = graph;
+export function NotebookGraphBlock({
+  graph,
+  blockId,
+  initialSource = "x",
+}: {
+  graph: CellGraph;
+  blockId: string;
+  initialSource?: string;
+}) {
+  const blockIds = cellIdsNotebookBlock(blockId);
+  const initRef = useRef(false);
+  if (!initRef.current) {
+    initRef.current = true;
+    if (!graph.hasValue(blockIds.expressionList)) {
+      graph.set(blockIds.viewport, DEFAULT_VIEWPORT, { auxiliary: true });
+      const id = crypto.randomUUID();
+      const ids = cellIdsMultiRow(id);
+      graph.set(ids.expr, initialSource);
+      graph.set(ids.color, PALETTE[0] as number);
+      graph.set(ids.visible, true);
+      graph.set(blockIds.expressionList, [id], { auxiliary: true });
+    }
   }
-  const graph = graphRef.current;
-  const rowIds = useCell<string[]>(graph, EXPRESSION_LIST_CELL);
+  const rowIds = useCell<string[]>(graph, blockIds.expressionList);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   function addRow() {
-    const current = graph.get<string[]>(EXPRESSION_LIST_CELL);
+    const current = graph.get<string[]>(blockIds.expressionList);
     const id = crypto.randomUUID();
     const ids = cellIdsMultiRow(id);
     graph.set(ids.expr, "x");
     graph.set(ids.color, PALETTE[current.length % PALETTE.length] as number);
     graph.set(ids.visible, true);
-    graph.set(EXPRESSION_LIST_CELL, [...current, id]);
+    graph.set(blockIds.expressionList, [...current, id]);
   }
 
   useEffect(() => {
@@ -58,8 +68,8 @@ export function NotebookGraphBlock({ initialSource = "x" }: { initialSource?: st
     function redraw() {
       if (!ctx) return;
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
-      const viewport = graph.get<Viewport>(VIEWPORT_CELL);
-      for (const id of graph.get<string[]>(EXPRESSION_LIST_CELL)) {
+      const viewport = graph.get<Viewport>(blockIds.viewport);
+      for (const id of graph.get<string[]>(blockIds.expressionList)) {
         const ids = cellIdsMultiRow(id);
         try {
           const path = graph.get<Path2D>(ids.path);
@@ -76,12 +86,13 @@ export function NotebookGraphBlock({ initialSource = "x" }: { initialSource?: st
     }
     redraw();
     return graph.subscribeAll(redraw);
-  }, [graph]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, blockIds.viewport, blockIds.expressionList]);
 
   return (
     <div>
       {rowIds.map((id) => (
-        <ExpressionRow key={id} graph={graph} rowId={id} />
+        <ExpressionRow key={id} graph={graph} rowId={id} viewportCellId={blockIds.viewport} />
       ))}
       <button type="button" onClick={addRow} style={{ fontSize: "0.8rem" }}>
         + Add expression

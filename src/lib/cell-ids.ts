@@ -193,6 +193,41 @@ export function cellIdsMultiRow(cellId: string) {
 export type CellIdsMultiRow = ReturnType<typeof cellIdsMultiRow>;
 
 /**
+ * Cell-id namespacing for one graph block on the reactive notebook surface
+ * (NotebookPanel.tsx/NotebookGraphBlock.tsx). Unlike GraphCanvasMulti, where
+ * every row shares one `VIEWPORT_CELL`/`EXPRESSION_LIST_CELL` by design,
+ * multiple independent notebook graph blocks now live on one shared
+ * `CellGraph` (so a later block can reference an earlier one's value --
+ * see `notebookValueCellId` below) and would otherwise collide on those two
+ * unnamespaced constants. Each block's own rows still use `cellIdsMultiRow`
+ * unchanged -- row ids are already `crypto.randomUUID()`, so they don't
+ * collide across blocks.
+ */
+export function cellIdsNotebookBlock(blockId: string) {
+  return {
+    viewport: `notebookViewport:${blockId}`,
+    expressionList: `notebookExpressionList:${blockId}`,
+  };
+}
+
+export type CellIdsNotebookBlock = ReturnType<typeof cellIdsNotebookBlock>;
+
+/**
+ * A notebook "value" block's cell, keyed by its user-given `name` rather
+ * than its block id -- this is what makes cross-referencing registry-free:
+ * a graph block's free variable `k` resolves to this cell via a plain
+ * `graph.hasValue(notebookValueCellId("k"))` check, with no separate
+ * name -> block-id lookup needed. A rename simply starts a new cell under
+ * the new name; the old name's cell is left as a harmless orphan (matches
+ * this codebase's existing tolerance for orphaned cells on removal, e.g.
+ * GraphCanvasMulti's `removeRow` doesn't clean up a removed row's cells
+ * either).
+ */
+export function notebookValueCellId(name: string): string {
+  return `notebookValue:${name}`;
+}
+
+/**
  * Cell-id namespacing for the implicit-curve panel (ImplicitPanel.tsx) -- a
  * two-variable relation plus a rectangular domain, yet another shape
  * distinct from `cellIds`'s single-axis-variable model.
