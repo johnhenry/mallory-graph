@@ -12,11 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemsRouteImport } from './routes/systems'
 import { Route as Surface3dRouteImport } from './routes/surface-3d'
 import { Route as StatisticsRouteImport } from './routes/statistics'
+import { Route as RegressionRouteImport } from './routes/regression'
 import { Route as ParametricRouteImport } from './routes/parametric'
 import { Route as OdeRouteImport } from './routes/ode'
 import { Route as MultiRouteImport } from './routes/multi'
 import { Route as LinkedRouteImport } from './routes/linked'
 import { Route as ImplicitRouteImport } from './routes/implicit'
+import { Route as GeometryRouteImport } from './routes/geometry'
 import { Route as IndexRouteImport } from './routes/index'
 
 const SystemsRoute = SystemsRouteImport.update({
@@ -32,6 +34,11 @@ const Surface3dRoute = Surface3dRouteImport.update({
 const StatisticsRoute = StatisticsRouteImport.update({
   id: '/statistics',
   path: '/statistics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegressionRoute = RegressionRouteImport.update({
+  id: '/regression',
+  path: '/regression',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ParametricRoute = ParametricRouteImport.update({
@@ -59,6 +66,11 @@ const ImplicitRoute = ImplicitRouteImport.update({
   path: '/implicit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GeometryRoute = GeometryRouteImport.update({
+  id: '/geometry',
+  path: '/geometry',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -67,22 +79,26 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
   '/parametric': typeof ParametricRoute
+  '/regression': typeof RegressionRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
   '/parametric': typeof ParametricRoute
+  '/regression': typeof RegressionRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
@@ -90,11 +106,13 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
   '/parametric': typeof ParametricRoute
+  '/regression': typeof RegressionRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
@@ -103,33 +121,39 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/geometry'
     | '/implicit'
     | '/linked'
     | '/multi'
     | '/ode'
     | '/parametric'
+    | '/regression'
     | '/statistics'
     | '/surface-3d'
     | '/systems'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/geometry'
     | '/implicit'
     | '/linked'
     | '/multi'
     | '/ode'
     | '/parametric'
+    | '/regression'
     | '/statistics'
     | '/surface-3d'
     | '/systems'
   id:
     | '__root__'
     | '/'
+    | '/geometry'
     | '/implicit'
     | '/linked'
     | '/multi'
     | '/ode'
     | '/parametric'
+    | '/regression'
     | '/statistics'
     | '/surface-3d'
     | '/systems'
@@ -137,11 +161,13 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  GeometryRoute: typeof GeometryRoute
   ImplicitRoute: typeof ImplicitRoute
   LinkedRoute: typeof LinkedRoute
   MultiRoute: typeof MultiRoute
   OdeRoute: typeof OdeRoute
   ParametricRoute: typeof ParametricRoute
+  RegressionRoute: typeof RegressionRoute
   StatisticsRoute: typeof StatisticsRoute
   Surface3dRoute: typeof Surface3dRoute
   SystemsRoute: typeof SystemsRoute
@@ -168,6 +194,13 @@ declare module '@tanstack/react-router' {
       path: '/statistics'
       fullPath: '/statistics'
       preLoaderRoute: typeof StatisticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/regression': {
+      id: '/regression'
+      path: '/regression'
+      fullPath: '/regression'
+      preLoaderRoute: typeof RegressionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/parametric': {
@@ -205,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ImplicitRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/geometry': {
+      id: '/geometry'
+      path: '/geometry'
+      fullPath: '/geometry'
+      preLoaderRoute: typeof GeometryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -217,11 +257,13 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  GeometryRoute: GeometryRoute,
   ImplicitRoute: ImplicitRoute,
   LinkedRoute: LinkedRoute,
   MultiRoute: MultiRoute,
   OdeRoute: OdeRoute,
   ParametricRoute: ParametricRoute,
+  RegressionRoute: RegressionRoute,
   StatisticsRoute: StatisticsRoute,
   Surface3dRoute: Surface3dRoute,
   SystemsRoute: SystemsRoute,

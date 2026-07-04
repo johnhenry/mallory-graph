@@ -38,6 +38,12 @@ function HomePage() {
       <p>
         <Link to="/parametric">Parametric &amp; polar curves →</Link>
       </p>
+      <p>
+        <Link to="/regression">Regression →</Link>
+      </p>
+      <p>
+        <Link to="/geometry">Geometry construction →</Link>
+      </p>
       <GraphCanvas />
     </div>
   );
