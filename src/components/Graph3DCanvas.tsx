@@ -86,9 +86,16 @@ export interface Graph3DCanvasProps {
   defaultSource?: string;
   /** Share an existing CellGraph (e.g. a linked 2D+3D view) instead of creating a private one. */
   graph?: CellGraph;
+  /** When set, highlights the surface's y=crossSectionY cross-section as a red line (Linked3DView's cross-pane link). */
+  crossSectionY?: number;
 }
 
-export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", graph: externalGraph }: Graph3DCanvasProps = {}) {
+export function Graph3DCanvas({
+  cellId = "pane-3d",
+  defaultSource = "x^2-y^2",
+  graph: externalGraph,
+  crossSectionY,
+}: Graph3DCanvasProps = {}) {
   const ids = cellIds3D(cellId);
   const graph = useExpressionGraph3D(cellId, defaultSource, externalGraph);
   const mesh = useCell<Mesh[] | null>(graph, ids.mesh);
@@ -97,6 +104,7 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
   const [source, setSource] = useState(defaultSource);
   const containerRef = useRef<HTMLDivElement>(null);
   const surfaceGroupRef = useRef<THREE.Group | null>(null);
+  const highlightGroupRef = useRef<THREE.Group | null>(null);
 
   // Same reasoning as GraphCanvas: keeps the input box in sync with `ids.expr`
   // regardless of what wrote it (chat, URL hydration, a linked sibling pane).
@@ -150,6 +158,10 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
     surfaceGroupRef.current = group;
     scene.add(group);
 
+    const highlightGroup = new THREE.Group();
+    highlightGroupRef.current = highlightGroup;
+    scene.add(highlightGroup);
+
     let raf = 0;
     function tick() {
       controls.update();
@@ -164,6 +176,7 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
       renderer.dispose();
       container.removeChild(renderer.domElement);
       surfaceGroupRef.current = null;
+      highlightGroupRef.current = null;
     };
   }, []);
 
@@ -183,6 +196,47 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
       group.add(new THREE.Mesh(meshToGeometry(surfaceMesh), meshToMaterial(surfaceMesh)));
     }
   }, [mesh]);
+
+  // Highlights the y=crossSectionY cross-section as a red line directly on
+  // the surface -- Linked3DView's cross-pane link, letting the shape traced
+  // here be compared by eye against a sibling 2D pane's curve. Resampled
+  // independently from the expression (not read off the mesh's own
+  // triangulation) since the mesh's grid resolution rarely lands exactly on
+  // an arbitrary y value. `mesh` is used only as this effect's reactivity
+  // trigger (it already depends on expr/params changing); the actual sample
+  // reads `ids.expr`/`ids.params` fresh each time.
+  useEffect(() => {
+    const group = highlightGroupRef.current;
+    if (!group) return;
+    for (const child of [...group.children]) {
+      group.remove(child);
+      if (child instanceof THREE.Line) {
+        child.geometry.dispose();
+        (Array.isArray(child.material) ? child.material : [child.material]).forEach((m) => m.dispose());
+      }
+    }
+    if (crossSectionY === undefined) return;
+    try {
+      const compiled = Symbolic.compile(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+      const params = graph.get<Record<string, number>>(ids.params);
+      const SAMPLES = 80;
+      const points: THREE.Vector3[] = [];
+      for (let i = 0; i < SAMPLES; i++) {
+        const x = DOMAIN.min + (i / (SAMPLES - 1)) * (DOMAIN.max - DOMAIN.min);
+        const z = compiled({ ...params, x, y: crossSectionY });
+        // Same axis mapping as meshToGeometry: mallory's z (height) -> Three's y, mallory's y -> Three's z.
+        if (Number.isFinite(z)) points.push(new THREE.Vector3(x, z, crossSectionY));
+      }
+      if (points.length > 1) {
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        group.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xdc2626, linewidth: 2 })));
+      }
+    } catch {
+      // A mid-typing parse error -- the surface mesh's own error handling
+      // already surfaces the message; the highlight just disappears until it's valid again.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, mesh, crossSectionY]);
 
   return (
     <div>

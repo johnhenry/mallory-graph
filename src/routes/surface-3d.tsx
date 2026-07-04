@@ -13,7 +13,9 @@ function ThreeDPage() {
         <summary>A 2D curve and a 3D surface, sharing one reactive core.</summary>
         <p>
           Via <code>CellGraph</code>: sampling (<code>sample-function.ts</code> vs <code>sample-surface.ts</code>)
-          and rendering (Canvas2D vs Three.js) differ, but the expression/params/free-var plumbing is the same.
+          and rendering (Canvas2D vs Three.js) differ, but the expression/params/free-var plumbing is the same. A
+          "cross-section y" slider highlights the 3D surface's matching slice in red -- with the default
+          expressions, that slice exactly traces the 2D pane's curve at y=0.
         </p>
       </details>
       <p>
