@@ -12,6 +12,7 @@ import {
 } from "../lib/multi-graph-state.ts";
 import { drawExpressionLayer, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { saveGraph } from "../lib/saved-graphs.ts";
+import { findIntersections } from "../lib/sample-function.ts";
 import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY } from "../lib/viewport.ts";
 import { ExpressionRow } from "./ExpressionRow.tsx";
 import { useCell } from "../lib/use-cell.ts";
@@ -23,6 +24,12 @@ const ANNOTATION_HIT_RADIUS_PX = 10;
 // Not namespaced by any row id -- one shared annotation list per view,
 // mirroring EXPRESSION_LIST_CELL's own "one shared, unnamespaced list" shape.
 const ANNOTATIONS_CELL = "annotations";
+
+// Derived (graph.define'd), not user-set -- every pairwise crossing among
+// currently-visible rows, over the shared viewport's x-range. Read fresh
+// from each row's expr/params rather than its already-adaptively-sampled
+// Path2D (see findIntersections' own doc comment for why).
+const INTERSECTIONS_CELL = "intersections";
 
 // Cycled by index (mod length) as rows are added -- not meant to be a large
 // or exhaustive palette, just enough that a handful of curves stay visually
@@ -99,6 +106,38 @@ function useMultiGraph(): CellGraph {
     });
     graph.set(EXPRESSION_LIST_CELL, initialIds, { auxiliary: true });
     graph.set(ANNOTATIONS_CELL, state.annotations ?? [], { auxiliary: true });
+
+    graph.define(
+      INTERSECTIONS_CELL,
+      (): { x: number; y: number }[] => {
+        const rowIds = graph.get<string[]>(EXPRESSION_LIST_CELL);
+        const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+        const visibleRows = rowIds
+          .map((id) => cellIdsMultiRow(id))
+          .filter((rowCellIds) => graph.hasValue(rowCellIds.expr) && graph.get<boolean>(rowCellIds.visible));
+        const points: { x: number; y: number }[] = [];
+        for (let i = 0; i < visibleRows.length; i++) {
+          for (let j = i + 1; j < visibleRows.length; j++) {
+            const a = visibleRows[i] as ReturnType<typeof cellIdsMultiRow>;
+            const b = visibleRows[j] as ReturnType<typeof cellIdsMultiRow>;
+            try {
+              const exprA = graph.get<string>(a.expr);
+              const paramsA = graph.hasValue(a.params) ? graph.get<Record<string, number>>(a.params) : {};
+              const exprB = graph.get<string>(b.expr);
+              const paramsB = graph.hasValue(b.params) ? graph.get<Record<string, number>>(b.params) : {};
+              points.push(
+                ...findIntersections(exprA, paramsA, exprB, paramsB, { min: viewport.xMin, max: viewport.xMax }),
+              );
+            } catch {
+              // One row's expression doesn't parse mid-typing -- skip this pair this recompute.
+            }
+          }
+        }
+        return points;
+      },
+      { auxiliary: true },
+    );
+
     ref.current = graph;
   }
   return ref.current;
@@ -319,6 +358,8 @@ export function GraphCanvasMulti() {
           // draw on the next redraw once mounted.
         }
       }
+      const intersections = graph.get<{ x: number; y: number }[]>(INTERSECTIONS_CELL);
+      if (intersections.length > 0) drawScatter(ctx, intersections, viewport, WIDTH, HEIGHT, 5, "#9333ea");
       for (const a of graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL)) {
         const selected = a.id === selectedAnnotationId;
         const sx = toScreenX(a.x, viewport, WIDTH);

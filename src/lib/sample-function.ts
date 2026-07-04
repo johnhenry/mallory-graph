@@ -178,3 +178,51 @@ export function findRootCrossings(path: Path2D): { x: number; y: number }[] {
   }
   return roots;
 }
+
+/**
+ * Where two expressions' curves cross, over a shared domain -- the same
+ * "flag a sign change" technique as {@link findRootCrossings}, applied to
+ * `fA(x) - fB(x)` instead of `fA(x)` itself, i.e. an intersection is just a
+ * root crossing of the difference function. Deliberately re-evaluates both
+ * expressions on one freshly-built, uniform grid (not each row's own
+ * already-sampled `Path2D`, which `GraphCanvasMulti` builds via
+ * `sampleExprAdaptive` at each curve's own curvature-driven resolution and
+ * x-positions) -- two rows' adaptive samples essentially never land at the
+ * same x, so comparing them directly would be comparing points that aren't
+ * actually at the same x. A uniform shared grid sidesteps that entirely.
+ */
+export function findIntersections(
+  exprA: Expr | string,
+  paramsA: Record<string, number>,
+  exprB: Expr | string,
+  paramsB: Record<string, number>,
+  domain: Domain,
+  resolution = 400,
+  variable = "x",
+): { x: number; y: number }[] {
+  const compiledA = Symbolic.compile(typeof exprA === "string" ? preprocessImplicitMultiplication(exprA) : exprA);
+  const compiledB = Symbolic.compile(typeof exprB === "string" ? preprocessImplicitMultiplication(exprB) : exprB);
+  const envA: Record<string, number> = { ...paramsA, [variable]: 0 };
+  const envB: Record<string, number> = { ...paramsB, [variable]: 0 };
+  const points: { x: number; y: number }[] = [];
+  let prevX: number | null = null;
+  let prevDiff: number | null = null;
+  for (let i = 0; i < resolution; i++) {
+    const x = domain.min + (i / (resolution - 1)) * (domain.max - domain.min);
+    envA[variable] = x;
+    envB[variable] = x;
+    const a = compiledA(envA);
+    const b = compiledB(envB);
+    const diff = a - b;
+    const finiteDiff = Number.isFinite(diff) ? diff : null;
+    if (prevX !== null && prevDiff !== null && finiteDiff !== null && (prevDiff >= 0) !== (finiteDiff >= 0)) {
+      const t = prevDiff / (prevDiff - finiteDiff);
+      const xi = prevX + t * (x - prevX);
+      envA[variable] = xi;
+      points.push({ x: xi, y: compiledA(envA) });
+    }
+    prevX = x;
+    prevDiff = finiteDiff;
+  }
+  return points;
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Symbolic } from "mallory-math";
-import { findRootCrossings, sampleExpr, sampleExprAdaptive, sampleRegionMask } from "./sample-function.ts";
+import { findIntersections, findRootCrossings, sampleExpr, sampleExprAdaptive, sampleRegionMask } from "./sample-function.ts";
 
 test("samples a plain function of x with no params", () => {
   const path = sampleExpr("x^2", { min: -2, max: 2 }, 5);
@@ -89,6 +89,30 @@ test("findRootCrossings does not report a crossing across a moveTo (gap) boundar
     assert.ok(Math.abs(r.x - 1) > 0.4);
     assert.ok(Math.abs(r.x + 1) > 0.4);
   }
+});
+
+test("findIntersections finds where x^2 and x+2 cross (x=-1 and x=2)", () => {
+  const points = findIntersections("x^2", {}, "x+2", {}, { min: -3, max: 3 });
+  const xs = points.map((p) => p.x).sort((a, b) => a - b);
+  assert.equal(xs.length, 2);
+  assert.ok(Math.abs((xs[0] as number) - -1) < 0.05);
+  assert.ok(Math.abs((xs[1] as number) - 2) < 0.05);
+  // Both functions agree on y at each reported intersection.
+  for (const p of points) {
+    assert.ok(Math.abs(p.y - (p.x + 2)) < 0.05);
+  }
+});
+
+test("findIntersections respects each row's own params", () => {
+  // f(x) = a*x with a=2, g(x) = b with b=6 -- crosses at x=3.
+  const points = findIntersections("a*x", { a: 2 }, "b", { b: 6 }, { min: -3, max: 10 });
+  assert.equal(points.length, 1);
+  assert.ok(Math.abs((points[0] as { x: number }).x - 3) < 0.05);
+});
+
+test("findIntersections finds no points for curves that never cross", () => {
+  const points = findIntersections("x^2+1", {}, "-x^2-1", {}, { min: -3, max: 3 });
+  assert.equal(points.length, 0);
 });
 
 test("sampleRegionMask returns null for a non-cmp expression", () => {
