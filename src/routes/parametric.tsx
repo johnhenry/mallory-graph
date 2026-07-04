@@ -9,10 +9,13 @@ function ParametricPage() {
   return (
     <div>
       <h1>mallory-graph — parametric &amp; polar curves</h1>
-      <p>
-        Plots (x(t), y(t)) directly, or r(θ) reinterpreted as the parametric curve x=r·cosθ, y=r·sinθ. v1 is a single
-        curve over a fixed (non-pannable) viewport and domain.
-      </p>
+      <details>
+        <summary>Plots (x(t), y(t)) directly, or r(θ) reinterpreted as a parametric curve.</summary>
+        <p>
+          r(θ) becomes x=r·cosθ, y=r·sinθ under the hood. v1 is a single curve over a fixed (non-pannable) viewport
+          and domain.
+        </p>
+      </details>
       <p>
         <Link to="/">← back</Link>
       </p>

@@ -34,23 +34,27 @@ function MultiPage() {
   return (
     <div>
       <h1>mallory-graph — multiple expressions, one graph</h1>
-      <p>
-        Several curves sharing one coordinate system and one canvas, each with its own color and visibility toggle —
-        unlike the linked-panes view, which shares a <code>CellGraph</code> but still renders each pane on its own
-        separate canvas. v1 supports plotting and free-variable sliders per row; point-dragging, exact mode,
-        derivative steps, area/region shading, and finite-structure scatter stay single-expression-only for now (see{" "}
-        <code>GraphCanvas</code>). Root crossings (where a curve meets y=0) are marked automatically, via a
-        declarative "condition" cell decoupled from the drawing decision — the Open MCT-inspired pattern the roadmap
-        flagged for flagging points of interest generally. The full state (every row, its color/visibility/sliders,
-        annotations, and the viewport) lives in the URL, so reload restores the session, and "Fork this view" is just
-        opening that same URL in a new tab to explore an alternate path independently. "+ Annotate" then click the
-        canvas drops a labeled note at that point — "Jump" recenters the (currently pan/zoom-less) viewport on it, an
-        Open-MCT-inspired point annotation with cross-pane-style navigation, here within one shared view. Append{" "}
-        <code>?embed=1</code> to this URL (or use it directly as an <code>&lt;iframe&gt;</code> <code>src</code>) for
-        a chrome-free embeddable view. Each row's "strict" toggle uses <code>mallory-math</code>'s{" "}
-        <code>Symbolic.assertVariables</code>: once on, anything besides <code>x</code> is a hard error instead of
-        silently becoming a new slider — useful for catching a typo before it turns into a spurious parameter.
-      </p>
+      <details>
+        <summary>Several curves sharing one coordinate system and one canvas, with color, annotations, and sharing.</summary>
+        <p>
+          Unlike the linked-panes view, which shares a <code>CellGraph</code> but still renders each pane on its own
+          separate canvas. v1 supports plotting and free-variable sliders per row; point-dragging, exact mode,
+          derivative steps, area/region shading, and finite-structure scatter stay single-expression-only for now
+          (see <code>GraphCanvas</code>). Root crossings (where a curve meets y=0) are marked automatically, via a
+          declarative "condition" cell decoupled from the drawing decision — the Open MCT-inspired pattern the
+          roadmap flagged for flagging points of interest generally. The full state (every row, its
+          color/visibility/sliders, annotations, and the viewport) lives in the URL, so reload restores the session,
+          and "Fork this view" is just opening that same URL in a new tab to explore an alternate path independently.
+          "+ Annotate" then click the canvas drops a labeled note at that point — click a marker or its label to
+          select it, drag a selected marker to move it, edit its label in the list, or "Jump" to recenter the
+          (currently pan/zoom-less) viewport on it — an Open-MCT-inspired point annotation with cross-pane-style
+          navigation, here within one shared view. Append <code>?embed=1</code> to this URL (or use it directly as
+          an <code>&lt;iframe&gt;</code> <code>src</code>) for a chrome-free embeddable view. Each row's "strict"
+          toggle uses <code>mallory-math</code>'s <code>Symbolic.assertVariables</code>: once on, anything besides{" "}
+          <code>x</code> is a hard error instead of silently becoming a new slider — useful for catching a typo
+          before it turns into a spurious parameter.
+        </p>
+      </details>
       <p>
         <Link to="/">← back</Link>
       </p>

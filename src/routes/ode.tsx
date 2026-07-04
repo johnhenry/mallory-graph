@@ -9,11 +9,13 @@ function OdePage() {
   return (
     <div>
       <h1>mallory-graph — differential equations</h1>
-      <p>
-        Numerically solves a first-order IVP dy/dx = f(x, y), y(x0) = y0 via <code>Numerical.rk4</code>, plotted
-        against its slope field. v1 is a single first-order equation with a fixed (non-pannable) domain — symbolic
-        (closed-form) ODE solving and higher-order/systems-of-ODEs are later extensions.
-      </p>
+      <details>
+        <summary>Numerically solves a first-order IVP dy/dx = f(x, y), plotted against its slope field.</summary>
+        <p>
+          Via <code>Numerical.rk4</code>. v1 is a single first-order equation with a fixed (non-pannable) domain —
+          symbolic (closed-form) ODE solving and higher-order/systems-of-ODEs are later extensions.
+        </p>
+      </details>
       <p>
         <Link to="/">← back</Link>
       </p>

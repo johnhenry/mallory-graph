@@ -9,11 +9,13 @@ function ThreeDPage() {
   return (
     <div>
       <h1>mallory-graph — 3D surface</h1>
-      <p>
-        A 2D curve and a 3D surface, sharing one reactive core (<code>CellGraph</code>): sampling
-        (<code>sample-function.ts</code> vs <code>sample-surface.ts</code>) and rendering (Canvas2D vs Three.js)
-        differ, but the expression/params/free-var plumbing is the same.
-      </p>
+      <details>
+        <summary>A 2D curve and a 3D surface, sharing one reactive core.</summary>
+        <p>
+          Via <code>CellGraph</code>: sampling (<code>sample-function.ts</code> vs <code>sample-surface.ts</code>)
+          and rendering (Canvas2D vs Three.js) differ, but the expression/params/free-var plumbing is the same.
+        </p>
+      </details>
       <p>
         <Link to="/">← back</Link>
       </p>

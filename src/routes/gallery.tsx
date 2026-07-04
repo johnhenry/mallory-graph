@@ -49,11 +49,14 @@ function GalleryPage() {
   return (
     <div>
       <h1>mallory-graph — gallery</h1>
-      <p>
-        Graphs saved from the "Save to gallery" button on the{" "}
-        <Link to="/multi">multiple-expressions view</Link>. Opening one reopens it fully editable; fork or re-save to
-        remix it. v1 is a single shared, unauthenticated gallery — no per-user accounts or private graphs.
-      </p>
+      <details>
+        <summary>Graphs saved from the "Save to gallery" button on the multiple-expressions view.</summary>
+        <p>
+          Saved from <Link to="/multi">multiple-expressions view</Link>. Opening one reopens it fully editable; fork
+          or re-save to remix it. v1 is a single shared, unauthenticated gallery — no per-user accounts or private
+          graphs.
+        </p>
+      </details>
       <p>
         <Link to="/">← back</Link>
       </p>

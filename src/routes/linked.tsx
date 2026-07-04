@@ -9,9 +9,10 @@ function LinkedPage() {
   return (
     <div>
       <h1>mallory-graph — linked panes</h1>
-      <p>
-        Two panes, one shared clock: play or scrub the left pane's timeline and both curves advance together.
-      </p>
+      <details>
+        <summary>Two panes, one shared clock.</summary>
+        <p>Play or scrub the left pane's timeline and both curves advance together.</p>
+      </details>
       <p>
         <Link to="/">← back</Link>
       </p>
