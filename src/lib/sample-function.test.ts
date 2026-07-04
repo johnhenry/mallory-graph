@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Symbolic } from "mallory-math";
-import { findIntersections, findRootCrossings, sampleExpr, sampleExprAdaptive, sampleRegionMask } from "./sample-function.ts";
+import {
+  findConditionCrossings,
+  findDiscontinuities,
+  findIntersections,
+  findRootCrossings,
+  sampleExpr,
+  sampleExprAdaptive,
+  sampleRegionMask,
+} from "./sample-function.ts";
 
 test("samples a plain function of x with no params", () => {
   const path = sampleExpr("x^2", { min: -2, max: 2 }, 5);
@@ -89,6 +97,44 @@ test("findRootCrossings does not report a crossing across a moveTo (gap) boundar
     assert.ok(Math.abs(r.x - 1) > 0.4);
     assert.ok(Math.abs(r.x + 1) > 0.4);
   }
+});
+
+test("findConditionCrossings generalizes to an arbitrary threshold, not just y=0", () => {
+  // x^2 crosses the threshold y=4 at x=-2 and x=2 -- the signed distance to
+  // that boundary is (y - 4), so the crossing interpolates correctly, unlike
+  // a bare boolean predicate which can't say *where* between two samples
+  // the threshold was actually crossed.
+  const path = sampleExpr("x^2", { min: -3, max: 3 }, 13);
+  const crossings = findConditionCrossings(path, (y) => y - 4);
+  const xs = crossings.map((c) => c.x).sort((a, b) => a - b);
+  assert.equal(xs.length, 2);
+  assert.ok(Math.abs((xs[0] as number) - -2) < 0.5);
+  assert.ok(Math.abs((xs[1] as number) - 2) < 0.5);
+  for (const c of crossings) assert.ok(Math.abs(c.y - 4) < 1e-9);
+});
+
+test("findRootCrossings is findConditionCrossings with the identity (y=0) signed distance", () => {
+  const path = sampleExpr("x^2-4", { min: -3, max: 3 }, 13);
+  const viaRootCrossings = findRootCrossings(path);
+  const viaCondition = findConditionCrossings(path, (y) => y).map((c) => ({ x: c.x, y: 0 }));
+  assert.deepEqual(viaRootCrossings, viaCondition);
+});
+
+test("findDiscontinuities flags each gap in a sampled path, with the points on either side", () => {
+  // 1/(x^2-1) has singularities at x=-1 and x=1, each starting a new
+  // gap-tolerant run (a moveTo) -- exactly two discontinuities expected
+  // over this domain.
+  const path = sampleExpr("1/(x^2-1)", { min: -2, max: 2 }, 41);
+  const gaps = findDiscontinuities(path);
+  assert.equal(gaps.length, 2);
+  const beforeXs = gaps.map((g) => g.before.x).sort((a, b) => a - b);
+  assert.ok(Math.abs((beforeXs[0] as number) - -1) < 0.2);
+  assert.ok(Math.abs((beforeXs[1] as number) - 1) < 0.2);
+});
+
+test("findDiscontinuities finds no gaps for a curve defined everywhere in the domain", () => {
+  const path = sampleExpr("x^2", { min: -3, max: 3 }, 20);
+  assert.equal(findDiscontinuities(path).length, 0);
 });
 
 test("findIntersections finds where x^2 and x+2 cross (x=-1 and x=2)", () => {

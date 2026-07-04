@@ -7,6 +7,17 @@ const WIDTH = 500;
 const HEIGHT = 500;
 const VIEWPORT: Viewport = { xMin: -5, xMax: 5, yMin: -5, yMax: 5 };
 const HIT_RADIUS_PX = 14;
+// Below this, a Line/Circle's defining points are close enough to be
+// considered coincident -- a degenerate construction (zero length/radius)
+// flagged in a warning color, the same declarative "condition read off the
+// object's own dependent cell, decoupled from drawing" pattern
+// findRootCrossings/findDiscontinuities use for curves. Deliberately much
+// looser than an exact-zero check: a mouse/touch drag can realistically land
+// within a few hundredths of a data unit of another point (at this
+// viewport/canvas scale, ~2-3 screen pixels) but essentially never closer
+// than 1e-6, so that threshold would never fire for a real user.
+const DEGENERATE_EPSILON = 0.05;
+const DEGENERATE_COLOR = "#d97706";
 
 // Not namespaced by any cellId -- this is a single-instance panel, unlike
 // GraphCanvasMulti's rows.
@@ -243,8 +254,8 @@ export function GeometryPanel() {
           // defined cell only reports hasValue:true, and so only appears in
           // AlgebraView's Objects list, once something actually calls
           // get() on it. Nothing else ever did.
-          graph.get<number>(lengthCellId(id));
-          drawLine(ctx, pa, pb);
+          const length = graph.get<number>(lengthCellId(id));
+          drawLine(ctx, pa, pb, length < DEGENERATE_EPSILON);
         } else if (graph.has(circleCellId(id))) {
           const { center, radiusPoint } = graph.get<CircleRecord>(circleCellId(id));
           const pc = graph.get<PointRecord>(pointCellId(center));
@@ -252,7 +263,7 @@ export function GeometryPanel() {
           // dependent radius cell's own value instead of recomputing it
           // inline, which also makes it appear in the Objects list.
           const radius = graph.get<number>(radiusCellId(id));
-          drawCircle(ctx, pc, radius);
+          drawCircle(ctx, pc, radius, radius < DEGENERATE_EPSILON);
         }
       }
     }
@@ -334,9 +345,9 @@ function drawDot(ctx: CanvasRenderingContext2D, x: number, y: number, color: str
   ctx.restore();
 }
 
-function drawLine(ctx: CanvasRenderingContext2D, a: PointRecord, b: PointRecord): void {
+function drawLine(ctx: CanvasRenderingContext2D, a: PointRecord, b: PointRecord, degenerate = false): void {
   ctx.save();
-  ctx.strokeStyle = "#142033";
+  ctx.strokeStyle = degenerate ? DEGENERATE_COLOR : "#142033";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(toScreenX(a.x, VIEWPORT, WIDTH), toScreenY(a.y, VIEWPORT, HEIGHT));
@@ -345,12 +356,12 @@ function drawLine(ctx: CanvasRenderingContext2D, a: PointRecord, b: PointRecord)
   ctx.restore();
 }
 
-function drawCircle(ctx: CanvasRenderingContext2D, center: PointRecord, radius: number): void {
+function drawCircle(ctx: CanvasRenderingContext2D, center: PointRecord, radius: number, degenerate = false): void {
   const sx = toScreenX(center.x, VIEWPORT, WIDTH);
   const sy = toScreenY(center.y, VIEWPORT, HEIGHT);
   const screenRadius = (radius / (VIEWPORT.xMax - VIEWPORT.xMin)) * WIDTH;
   ctx.save();
-  ctx.strokeStyle = "#16a34a";
+  ctx.strokeStyle = degenerate ? DEGENERATE_COLOR : "#16a34a";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(sx, sy, screenRadius, 0, Math.PI * 2);

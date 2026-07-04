@@ -18,7 +18,10 @@ function GeometryPage() {
           each construct a new point that is itself dependent on the point(s) it was built from, so dragging a free
           point cascades through every line, circle, and transform built from it. Free points are drawn in blue,
           dependent (constructed) points in gray-blue — only free points are draggable, since a dependent point's
-          position is entirely determined by what it was built from.
+          position is entirely determined by what it was built from. A Line/Circle whose defining points have
+          collapsed onto each other (zero length/radius) draws in amber instead — the same declarative
+          condition-flag pattern <code>/multi</code> uses for root crossings and discontinuities, applied here to
+          "this construction has degenerated."
         </p>
       </details>
       <p>

@@ -155,28 +155,69 @@ export function sampleRegionMask(
 }
 
 /**
- * Flags where a sampled path crosses y=0, by linear-interpolating between
- * each adjacent pair of points whose y-values differ in sign. A declarative
- * "condition" derived from the curve's own sampled data, decoupled from how
- * (or whether) a consumer draws it -- the Open MCT-inspired
- * condition-object/styling-consumer pattern from the research roadmap,
- * applied to the one concrete case of "this curve crosses zero here."
- * `moveTo` commands (the start of a new gap-tolerant run -- see
+ * Flags where a sampled path crosses a condition boundary, via
+ * `toSignedDistance`: a function of `y` whose *sign* says which side of the
+ * condition a point is on, and whose *magnitude* is a plain linear distance
+ * from the boundary (so lerping it to zero between two adjacent points
+ * locates the crossing) -- e.g. `y - threshold` for "crosses a threshold",
+ * or plain `y` (identity) for "crosses zero", which is
+ * {@link findRootCrossings}'s original, single hardcoded case. A boolean
+ * predicate alone (`y >= threshold`) isn't enough information to
+ * interpolate *where* between two samples the crossing actually falls --
+ * only a signed, lerpable quantity is, which is why this takes a number-
+ * returning function rather than the boolean one this started as. A
+ * declarative "condition" derived from the curve's own sampled data,
+ * decoupled from how (or whether) a consumer draws it -- the Open
+ * MCT-inspired condition-object/styling-consumer pattern from the research
+ * roadmap. `moveTo` commands (the start of a new gap-tolerant run -- see
  * `sampleExpr`) are skipped as a *left* endpoint of a pair, since a
  * `moveTo` means the previous run ended at a singularity/undefined point,
- * not a real sign change into this new run.
+ * not a real condition change into this new run.
  */
-export function findRootCrossings(path: Path2D): { x: number; y: number }[] {
-  const roots: { x: number; y: number }[] = [];
+export function findConditionCrossings(path: Path2D, toSignedDistance: (y: number) => number): { x: number; y: number }[] {
+  const crossings: { x: number; y: number }[] = [];
   for (let i = 1; i < path.commands.length; i++) {
     const prev = path.commands[i - 1];
     const curr = path.commands[i];
     if (!prev || !curr || curr.op !== "lineTo") continue;
-    if (prev.y >= 0 === curr.y >= 0) continue;
-    const t = prev.y / (prev.y - curr.y);
-    roots.push({ x: prev.x + t * (curr.x - prev.x), y: 0 });
+    const dPrev = toSignedDistance(prev.y);
+    const dCurr = toSignedDistance(curr.y);
+    if (dPrev >= 0 === dCurr >= 0) continue;
+    const t = dPrev / (dPrev - dCurr);
+    crossings.push({ x: prev.x + t * (curr.x - prev.x), y: prev.y + t * (curr.y - prev.y) });
   }
-  return roots;
+  return crossings;
+}
+
+/** Where a sampled path crosses y=0 -- {@link findConditionCrossings} with the one condition this shipped for originally. */
+export function findRootCrossings(path: Path2D): { x: number; y: number }[] {
+  return findConditionCrossings(path, (y) => y).map((c) => ({ x: c.x, y: 0 }));
+}
+
+/**
+ * Flags every discontinuity (gap) in a sampled path -- each `moveTo` after
+ * the first command marks where the previous contiguous run ended at a
+ * singularity or left the function's domain (see `sampleExpr`'s own
+ * gap-tolerant-run doc comment) and a new run began. The same declarative
+ * "condition cell, decoupled from drawing" pattern as
+ * {@link findConditionCrossings}, applied to "this curve has a
+ * discontinuity/domain boundary here" instead of "crosses a threshold."
+ * Returns the last point of the run *before* the gap and the first point
+ * of the run *after* it, so a consumer can mark both edges (e.g. open
+ * circles) rather than guessing a single representative location for a
+ * gap whose true width isn't known any more precisely than the sampling
+ * resolution.
+ */
+export function findDiscontinuities(path: Path2D): { before: { x: number; y: number }; after: { x: number; y: number } }[] {
+  const gaps: { before: { x: number; y: number }; after: { x: number; y: number } }[] = [];
+  for (let i = 1; i < path.commands.length; i++) {
+    const curr = path.commands[i];
+    if (curr?.op !== "moveTo") continue;
+    const prev = path.commands[i - 1];
+    if (!prev) continue;
+    gaps.push({ before: { x: prev.x, y: prev.y }, after: { x: curr.x, y: curr.y } });
+  }
+  return gaps;
 }
 
 /**

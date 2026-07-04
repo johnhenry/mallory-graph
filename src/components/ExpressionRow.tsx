@@ -5,7 +5,7 @@ import { cellIdsMultiRow, VIEWPORT_CELL } from "../lib/cell-ids.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import type { Viewport } from "../lib/render-path.ts";
-import { findRootCrossings, sampleExprAdaptive } from "../lib/sample-function.ts";
+import { findDiscontinuities, findRootCrossings, sampleExprAdaptive } from "../lib/sample-function.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { MathInput } from "./MathInput.tsx";
 
@@ -121,6 +121,11 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
       // crossings -- the flag computation is decoupled from the drawing
       // decision, the Open-MCT-inspired pattern from the research roadmap.
       graph.define(ids.roots, () => findRootCrossings(graph.get(ids.path)), { auxiliary: true });
+
+      // Same declarative "condition cell, decoupled from drawing" pattern as
+      // `roots` above, generalized: every gap in the sampled path (a
+      // singularity or domain boundary), not just where it crosses zero.
+      graph.define(ids.discontinuities, () => findDiscontinuities(graph.get(ids.path)), { auxiliary: true });
 
       // f' as just another sampled curve, reusing the same sampleExprAdaptive
       // path every row's own f already goes through -- Symbolic.differentiate

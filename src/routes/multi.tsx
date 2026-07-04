@@ -43,8 +43,11 @@ function MultiPage() {
           finite-structure scatter stay single-expression-only for now (see <code>GraphCanvas</code>). Root crossings
           (where a curve meets y=0) are marked automatically, via a
           declarative "condition" cell decoupled from the drawing decision — the Open MCT-inspired pattern the
-          roadmap flagged for flagging points of interest generally. Pairwise intersections between every currently
-          visible pair of curves are marked the same way, in purple. The full state (every row, its
+          roadmap flagged for flagging points of interest generally, since generalized (same underlying
+          <code>findConditionCrossings</code>) to an arbitrary threshold, not just y=0. Discontinuities (a
+          singularity or domain boundary in a curve) are marked the same way too, as open circles. Pairwise
+          intersections between every currently visible pair of curves are marked the same way, in purple. The full
+          state (every row, its
           color/visibility/sliders, annotations, and the viewport) lives in the URL, so reload restores the session,
           and "Fork this view" is just opening that same URL in a new tab to explore an alternate path independently.
           "+ Annotate" then click the canvas drops a labeled note at that point — click a marker or its label to

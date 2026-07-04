@@ -273,3 +273,26 @@ export function drawScatter(
   }
   ctx.restore();
 }
+
+/** Draw a set of discrete data-space points as unfilled (stroked-only) circles -- used for discontinuity/domain-boundary markers, visually distinct from `drawScatter`'s solid dots. */
+export function drawOpenCircles(
+  ctx: CanvasRenderingContext2D,
+  points: Array<{ x: number; y: number }>,
+  viewport: Viewport,
+  width: number,
+  height: number,
+  radius = 5,
+  color = "#d97706",
+): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  for (const p of points) {
+    const sx = toScreenX(p.x, viewport, width);
+    const sy = toScreenY(p.y, viewport, height);
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
