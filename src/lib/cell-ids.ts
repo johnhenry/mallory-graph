@@ -144,3 +144,42 @@ export function cellIdsMultiRow(cellId: string) {
 }
 
 export type CellIdsMultiRow = ReturnType<typeof cellIdsMultiRow>;
+
+/**
+ * Cell-id namespacing for the implicit-curve panel (ImplicitPanel.tsx) -- a
+ * two-variable relation plus a rectangular domain, yet another shape
+ * distinct from `cellIds`'s single-axis-variable model.
+ */
+export function cellIdsImplicit(cellId: string) {
+  return {
+    expr: `implicitExpr:${cellId}`,
+    xMin: `implicitXMin:${cellId}`,
+    xMax: `implicitXMax:${cellId}`,
+    yMin: `implicitYMin:${cellId}`,
+    yMax: `implicitYMax:${cellId}`,
+    segments: `implicitSegments:${cellId}`,
+  };
+}
+
+export type CellIdsImplicit = ReturnType<typeof cellIdsImplicit>;
+
+/**
+ * Cell-id namespacing for the parametric/polar panel (ParametricPanel.tsx):
+ * either x(t)/y(t) expressions, or a single r(θ) expression converted to
+ * x=r·cosθ, y=r·sinθ internally -- one mode flag, one pair of component
+ * expressions (reused for whichever mode is active), a t/θ domain, and a
+ * resolution.
+ */
+export function cellIdsParametric(cellId: string) {
+  return {
+    mode: `paramMode:${cellId}`,
+    exprX: `paramExprX:${cellId}`,
+    exprY: `paramExprY:${cellId}`,
+    exprR: `paramExprR:${cellId}`,
+    tMin: `paramTMin:${cellId}`,
+    tMax: `paramTMax:${cellId}`,
+    path: `paramPath:${cellId}`,
+  };
+}
+
+export type CellIdsParametric = ReturnType<typeof cellIdsParametric>;

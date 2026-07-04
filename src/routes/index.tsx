@@ -32,6 +32,12 @@ function HomePage() {
       <p>
         <Link to="/ode">Differential equations →</Link>
       </p>
+      <p>
+        <Link to="/implicit">Implicit relations →</Link>
+      </p>
+      <p>
+        <Link to="/parametric">Parametric &amp; polar curves →</Link>
+      </p>
       <GraphCanvas />
     </div>
   );

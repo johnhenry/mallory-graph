@@ -1,0 +1,24 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ImplicitPanel } from "../components/ImplicitPanel.tsx";
+
+export const Route = createFileRoute("/implicit")({
+  component: ImplicitPage,
+});
+
+function ImplicitPage() {
+  return (
+    <div>
+      <h1>mallory-graph — implicit relations</h1>
+      <p>
+        Traces a two-variable relation like <code>x^2+y^2=4</code> via marching squares — unlike every other view here,
+        this plots a relation that isn't solved for <code>y</code>. v1 is a single relation over a fixed
+        (non-pannable) domain; the saddle-case (ambiguous-crossing) resolution is a fixed pairing rather than a full
+        asymptotic decider, so a rare cell can connect the wrong diagonal.
+      </p>
+      <p>
+        <Link to="/">← back</Link>
+      </p>
+      <ImplicitPanel />
+    </div>
+  );
+}

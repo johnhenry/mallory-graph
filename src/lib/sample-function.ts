@@ -51,6 +51,82 @@ export function sampleExpr(
   return { stroke: (segments[0] as Path2D).stroke, commands: segments.flatMap((s) => s.commands) };
 }
 
+export interface AdaptiveOptions {
+  /** How many times a single base-grid segment may be bisected. */
+  maxDepth?: number;
+  /** A segment is bisected further when its midpoint sample deviates from straight-line interpolation by more than this, in y-units. */
+  tolerance?: number;
+}
+
+/**
+ * Like `sampleExpr`, but refines the fixed uniform grid where the curve is
+ * locally non-linear: for each pair of adjacent base-grid points, evaluate
+ * the midpoint and compare it to straight-line interpolation between the
+ * two -- if they disagree by more than `tolerance`, recurse into both
+ * halves (up to `maxDepth`). A segment that's already locally straight adds
+ * no extra points, so a gentle curve costs the same as `sampleExpr`, while a
+ * sharp bend or narrow spike that a uniform grid could straddle gets
+ * resolved. Non-goal: `tolerance` is an absolute y-unit threshold, not
+ * scaled to the viewport's y-range, so the same default may under- or
+ * over-refine for functions with very different output scales.
+ */
+export function sampleExprAdaptive(
+  expr: Expr | string,
+  domain: Domain,
+  baseResolution: number,
+  variable = "x",
+  params: Record<string, number> = {},
+  color = 0x2563eb,
+  options: AdaptiveOptions = {},
+): Path2D {
+  const { maxDepth = 4, tolerance = 1e-3 } = options;
+  const compiled = Symbolic.compile(typeof expr === "string" ? preprocessImplicitMultiplication(expr) : expr);
+  const env: Record<string, number> = { ...params, [variable]: 0 };
+  function evalAt(x: number): number {
+    env[variable] = x;
+    return compiled(env);
+  }
+
+  const basePoints: { x: number; y: number }[] = [];
+  for (let i = 0; i < baseResolution; i++) {
+    const x = domain.min + (i / (baseResolution - 1)) * (domain.max - domain.min);
+    basePoints.push({ x, y: evalAt(x) });
+  }
+
+  function refine(a: { x: number; y: number }, b: { x: number; y: number }, depth: number): { x: number; y: number }[] {
+    if (depth >= maxDepth || !Number.isFinite(a.y) || !Number.isFinite(b.y)) return [a];
+    const xm = (a.x + b.x) / 2;
+    const ym = evalAt(xm);
+    // A non-finite midpoint means a singularity lives between a and b -- let
+    // the base grid's own gap-detection (below) handle that boundary rather
+    // than forcing a bad sample into the middle of an otherwise-good run.
+    if (!Number.isFinite(ym)) return [a];
+    const linearY = (a.y + b.y) / 2;
+    if (Math.abs(ym - linearY) <= tolerance) return [a];
+    const mid = { x: xm, y: ym };
+    return [...refine(a, mid, depth + 1), ...refine(mid, b, depth + 1)];
+  }
+
+  const refinedPoints: { x: number; y: number }[] = [];
+  for (let i = 0; i < basePoints.length - 1; i++) {
+    refinedPoints.push(...refine(basePoints[i] as { x: number; y: number }, basePoints[i + 1] as { x: number; y: number }, 0));
+  }
+  const last = basePoints[basePoints.length - 1];
+  if (last) refinedPoints.push(last);
+
+  const runs: Vector<number>[][] = [[]];
+  for (const p of refinedPoints) {
+    if (Number.isFinite(p.y)) {
+      (runs[runs.length - 1] as Vector<number>[]).push(Vector.fromArray([p.x, p.y]));
+    } else if ((runs[runs.length - 1] as Vector<number>[]).length > 0) {
+      runs.push([]);
+    }
+  }
+  const segments = runs.filter((run) => run.length > 0).map((run) => GraphUtils.vectorToCurve(Vector.fromArray(run), 2, color));
+  if (segments.length === 0) return GraphUtils.vectorToCurve(Vector.fromArray([]), 2, color);
+  return { stroke: (segments[0] as Path2D).stroke, commands: segments.flatMap((s) => s.commands) };
+}
+
 /**
  * Samples a `cmp` (comparison) Expr at the same resolution/grid as
  * `sampleExpr`, producing one boolean per sample point (true where the

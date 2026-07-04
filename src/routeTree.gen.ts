@@ -12,9 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemsRouteImport } from './routes/systems'
 import { Route as Surface3dRouteImport } from './routes/surface-3d'
 import { Route as StatisticsRouteImport } from './routes/statistics'
+import { Route as ParametricRouteImport } from './routes/parametric'
 import { Route as OdeRouteImport } from './routes/ode'
 import { Route as MultiRouteImport } from './routes/multi'
 import { Route as LinkedRouteImport } from './routes/linked'
+import { Route as ImplicitRouteImport } from './routes/implicit'
 import { Route as IndexRouteImport } from './routes/index'
 
 const SystemsRoute = SystemsRouteImport.update({
@@ -32,6 +34,11 @@ const StatisticsRoute = StatisticsRouteImport.update({
   path: '/statistics',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ParametricRoute = ParametricRouteImport.update({
+  id: '/parametric',
+  path: '/parametric',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OdeRoute = OdeRouteImport.update({
   id: '/ode',
   path: '/ode',
@@ -47,6 +54,11 @@ const LinkedRoute = LinkedRouteImport.update({
   path: '/linked',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImplicitRoute = ImplicitRouteImport.update({
+  id: '/implicit',
+  path: '/implicit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -55,18 +67,22 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
+  '/parametric': typeof ParametricRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
+  '/parametric': typeof ParametricRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
@@ -74,9 +90,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
+  '/parametric': typeof ParametricRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
@@ -85,27 +103,33 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/implicit'
     | '/linked'
     | '/multi'
     | '/ode'
+    | '/parametric'
     | '/statistics'
     | '/surface-3d'
     | '/systems'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/implicit'
     | '/linked'
     | '/multi'
     | '/ode'
+    | '/parametric'
     | '/statistics'
     | '/surface-3d'
     | '/systems'
   id:
     | '__root__'
     | '/'
+    | '/implicit'
     | '/linked'
     | '/multi'
     | '/ode'
+    | '/parametric'
     | '/statistics'
     | '/surface-3d'
     | '/systems'
@@ -113,9 +137,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ImplicitRoute: typeof ImplicitRoute
   LinkedRoute: typeof LinkedRoute
   MultiRoute: typeof MultiRoute
   OdeRoute: typeof OdeRoute
+  ParametricRoute: typeof ParametricRoute
   StatisticsRoute: typeof StatisticsRoute
   Surface3dRoute: typeof Surface3dRoute
   SystemsRoute: typeof SystemsRoute
@@ -144,6 +170,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatisticsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/parametric': {
+      id: '/parametric'
+      path: '/parametric'
+      fullPath: '/parametric'
+      preLoaderRoute: typeof ParametricRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ode': {
       id: '/ode'
       path: '/ode'
@@ -165,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LinkedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/implicit': {
+      id: '/implicit'
+      path: '/implicit'
+      fullPath: '/implicit'
+      preLoaderRoute: typeof ImplicitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -177,9 +217,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ImplicitRoute: ImplicitRoute,
   LinkedRoute: LinkedRoute,
   MultiRoute: MultiRoute,
   OdeRoute: OdeRoute,
+  ParametricRoute: ParametricRoute,
   StatisticsRoute: StatisticsRoute,
   Surface3dRoute: Surface3dRoute,
   SystemsRoute: SystemsRoute,

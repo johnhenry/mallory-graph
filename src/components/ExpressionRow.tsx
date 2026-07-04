@@ -5,7 +5,7 @@ import { cellIdsMultiRow, VIEWPORT_CELL } from "../lib/cell-ids.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import type { Viewport } from "../lib/render-path.ts";
-import { sampleExpr } from "../lib/sample-function.ts";
+import { sampleExprAdaptive } from "../lib/sample-function.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { MathInput } from "./MathInput.tsx";
 
@@ -54,7 +54,7 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
         { auxiliary: true },
       );
 
-      let lastGoodPath: ReturnType<typeof sampleExpr> | null = null;
+      let lastGoodPath: ReturnType<typeof sampleExprAdaptive> | null = null;
       graph.define(
         ids.path,
         () => {
@@ -62,7 +62,7 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
             const viewport = graph.get<Viewport>(VIEWPORT_CELL);
             const params = graph.get<Record<string, number>>(ids.params);
             const color = graph.get<number>(ids.color);
-            lastGoodPath = sampleExpr(
+            lastGoodPath = sampleExprAdaptive(
               graph.get<string>(ids.expr),
               { min: viewport.xMin, max: viewport.xMax },
               RESOLUTION,

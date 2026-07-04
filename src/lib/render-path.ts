@@ -1,7 +1,34 @@
 import type { Path2D as MalloryPath } from "mallory-math";
+import type { ImplicitSegment } from "./sample-implicit.ts";
 import { toScreenX, toScreenY, type Viewport } from "./viewport.ts";
 
 export type { Viewport } from "./viewport.ts";
+
+/**
+ * Draw a marching-squares implicit-curve trace: disconnected line segments,
+ * not a single polyline (an implicit relation can have multiple components
+ * or branches), so each segment gets its own `moveTo`/`lineTo` pair rather
+ * than being concatenated into one path.
+ */
+export function drawImplicitCurve(
+  ctx: CanvasRenderingContext2D,
+  segments: ImplicitSegment[],
+  viewport: Viewport,
+  width: number,
+  height: number,
+  color = "#2563eb",
+): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const s of segments) {
+    ctx.moveTo(toScreenX(s.x1, viewport, width), toScreenY(s.y1, viewport, height));
+    ctx.lineTo(toScreenX(s.x2, viewport, width), toScreenY(s.y2, viewport, height));
+  }
+  ctx.stroke();
+  ctx.restore();
+}
 
 /** Draw a mallory-math Path2D (moveTo/lineTo commands in data space) onto a real Canvas2D context. */
 export function drawPath(ctx: CanvasRenderingContext2D, path: MalloryPath, viewport: Viewport, width: number, height: number): void {
