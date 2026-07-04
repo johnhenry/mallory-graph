@@ -114,3 +114,33 @@ export function cellIdsOde(cellId: string) {
 }
 
 export type CellIdsOde = ReturnType<typeof cellIdsOde>;
+
+// Deliberately NOT namespaced by cellId, same reasoning as TIME_CELL: every
+// expression row on a GraphCanvasMulti shares one coordinate system and one
+// ordered row list, rather than each owning an independent viewport the way
+// LinkedGraphPanes's side-by-side panes do.
+export const VIEWPORT_CELL = "viewport";
+export const EXPRESSION_LIST_CELL = "expressionList";
+
+/**
+ * Cell-id namespacing for one row on a shared multi-expression canvas
+ * (GraphCanvasMulti.tsx/ExpressionRow.tsx) -- deliberately a smaller set
+ * than `cellIds`: v1 covers the curve itself, its color/visibility, and
+ * free-variable sliders, but not yet the single-pane `GraphCanvas`'s
+ * point-drag/exact-mode/derivative-steps/area/region-shading/finite-
+ * structure features, which stay single-expression-only for now (porting
+ * each to a multi-curve-aware form is follow-on work, not this pass).
+ */
+export function cellIdsMultiRow(cellId: string) {
+  return {
+    expr: `multiExpr:${cellId}`,
+    color: `multiColor:${cellId}`,
+    visible: `multiVisible:${cellId}`,
+    freeVars: `multiFreeVars:${cellId}`,
+    params: `multiParams:${cellId}`,
+    path: `multiPath:${cellId}`,
+    param: (name: string) => `multiParam:${cellId}:${name}`,
+  };
+}
+
+export type CellIdsMultiRow = ReturnType<typeof cellIdsMultiRow>;

@@ -31,6 +31,13 @@ test("breaks the path into separate segments at singularities instead of drawing
   assert.ok(path.commands.every((c) => Number.isFinite(c.x) && Number.isFinite(c.y)));
 });
 
+test("sampleExpr defaults to the standard blue when no color is given, and honors an explicit color", () => {
+  const defaultPath = sampleExpr("x", { min: 0, max: 1 }, 2);
+  assert.equal(defaultPath.stroke.color, 0x2563eb);
+  const redPath = sampleExpr("x", { min: 0, max: 1 }, 2, "x", {}, 0xdc2626);
+  assert.equal(redPath.stroke.color, 0xdc2626);
+});
+
 test("sampleRegionMask returns null for a non-cmp expression", () => {
   assert.equal(sampleRegionMask(Symbolic.parse("x^2"), { min: -2, max: 2 }, 5), null);
 });

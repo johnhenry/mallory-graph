@@ -13,6 +13,7 @@ import { Route as SystemsRouteImport } from './routes/systems'
 import { Route as Surface3dRouteImport } from './routes/surface-3d'
 import { Route as StatisticsRouteImport } from './routes/statistics'
 import { Route as OdeRouteImport } from './routes/ode'
+import { Route as MultiRouteImport } from './routes/multi'
 import { Route as LinkedRouteImport } from './routes/linked'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -36,6 +37,11 @@ const OdeRoute = OdeRouteImport.update({
   path: '/ode',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MultiRoute = MultiRouteImport.update({
+  id: '/multi',
+  path: '/multi',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LinkedRoute = LinkedRouteImport.update({
   id: '/linked',
   path: '/linked',
@@ -50,6 +56,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
+  '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
+  '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
+  '/multi': typeof MultiRoute
   '/ode': typeof OdeRoute
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
@@ -75,13 +84,27 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/linked' | '/ode' | '/statistics' | '/surface-3d' | '/systems'
+    | '/'
+    | '/linked'
+    | '/multi'
+    | '/ode'
+    | '/statistics'
+    | '/surface-3d'
+    | '/systems'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/linked' | '/ode' | '/statistics' | '/surface-3d' | '/systems'
+  to:
+    | '/'
+    | '/linked'
+    | '/multi'
+    | '/ode'
+    | '/statistics'
+    | '/surface-3d'
+    | '/systems'
   id:
     | '__root__'
     | '/'
     | '/linked'
+    | '/multi'
     | '/ode'
     | '/statistics'
     | '/surface-3d'
@@ -91,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LinkedRoute: typeof LinkedRoute
+  MultiRoute: typeof MultiRoute
   OdeRoute: typeof OdeRoute
   StatisticsRoute: typeof StatisticsRoute
   Surface3dRoute: typeof Surface3dRoute
@@ -127,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OdeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/multi': {
+      id: '/multi'
+      path: '/multi'
+      fullPath: '/multi'
+      preLoaderRoute: typeof MultiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/linked': {
       id: '/linked'
       path: '/linked'
@@ -147,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LinkedRoute: LinkedRoute,
+  MultiRoute: MultiRoute,
   OdeRoute: OdeRoute,
   StatisticsRoute: StatisticsRoute,
   Surface3dRoute: Surface3dRoute,

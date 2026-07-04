@@ -31,6 +31,7 @@ export function sampleExpr(
   resolution: number,
   variable = "x",
   params: Record<string, number> = {},
+  color = 0x2563eb,
 ): Path2D {
   const compiled = Symbolic.compile(typeof expr === "string" ? preprocessImplicitMultiplication(expr) : expr);
   const env: Record<string, number> = { ...params, [variable]: 0 };
@@ -45,10 +46,8 @@ export function sampleExpr(
       runs.push([]);
     }
   }
-  const segments = runs
-    .filter((run) => run.length > 0)
-    .map((run) => GraphUtils.vectorToCurve(Vector.fromArray(run), 2, 0x2563eb));
-  if (segments.length === 0) return GraphUtils.vectorToCurve(Vector.fromArray([]), 2, 0x2563eb);
+  const segments = runs.filter((run) => run.length > 0).map((run) => GraphUtils.vectorToCurve(Vector.fromArray(run), 2, color));
+  if (segments.length === 0) return GraphUtils.vectorToCurve(Vector.fromArray([]), 2, color);
   return { stroke: (segments[0] as Path2D).stroke, commands: segments.flatMap((s) => s.commands) };
 }
 

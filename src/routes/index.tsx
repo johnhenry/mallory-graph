@@ -15,6 +15,9 @@ function HomePage() {
         core (<code>Symbolic.compile</code> → <code>CellGraph</code> → <code>GraphUtils.vectorToCurve</code>).
       </p>
       <p>
+        <Link to="/multi">Multiple expressions, one graph →</Link>
+      </p>
+      <p>
         <Link to="/linked">Linked multi-pane view →</Link>
       </p>
       <p>

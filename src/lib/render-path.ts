@@ -20,6 +20,27 @@ export function drawPath(ctx: CanvasRenderingContext2D, path: MalloryPath, viewp
   ctx.restore();
 }
 
+/**
+ * Draw one row of a shared multi-expression canvas (GraphCanvasMulti.tsx) --
+ * a thin wrapper around `drawPath` that's a no-op when the row is toggled
+ * hidden, so the draw loop can call this unconditionally for every row in
+ * `EXPRESSION_LIST_CELL` order without an `if (visible)` at every call site.
+ * v1 draws just the curve itself; region-shading/area-fill/point-handle
+ * layers stay single-expression-only for now (see `cellIdsMultiRow`'s doc
+ * comment).
+ */
+export function drawExpressionLayer(
+  ctx: CanvasRenderingContext2D,
+  path: MalloryPath,
+  visible: boolean,
+  viewport: Viewport,
+  width: number,
+  height: number,
+): void {
+  if (!visible) return;
+  drawPath(ctx, path, viewport, width, height);
+}
+
 /** Draw a filled circular handle at a data-space point (used for draggable points). */
 export function drawPoint(
   ctx: CanvasRenderingContext2D,
