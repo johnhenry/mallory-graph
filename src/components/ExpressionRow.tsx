@@ -7,6 +7,7 @@ import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import type { Viewport } from "../lib/render-path.ts";
 import { sampleExpr } from "../lib/sample-function.ts";
 import { useCell } from "../lib/use-cell.ts";
+import { MathInput } from "./MathInput.tsx";
 
 const RESOLUTION = 400;
 const AXIS_VARIABLE = "x";
@@ -95,6 +96,8 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
   const visible = useCell<boolean>(graph, ids.visible);
   const freeVars = useCell<string[]>(graph, ids.freeVars);
   const [exprInput, setExprInput] = useState(expr);
+  const [useMathKeyboard, setUseMathKeyboard] = useState(false);
+  const [latexInput, setLatexInput] = useState(() => toLatexOrEmpty(expr));
 
   // Same reasoning as GraphCanvas's own slider-seeding effect: freeVars is
   // read synchronously during render via useCell, so seeding a newly
@@ -114,6 +117,26 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
     graph.set(ids.expr, value);
   }
 
+  // Fed by MathInput's `input` event (LaTeX, live as the user types on the
+  // math keyboard). `Symbolic.fromLatex`/`toLatex` already round-trip
+  // through every function including piecewise `\cases`, so converting
+  // back to plain expression source is a straight call -- the only care
+  // needed is that LaTeX is routinely *incomplete* mid-edit (e.g.
+  // "\frac{1}{" before the denominator is typed), which throws; leaving the
+  // graph's expression untouched on that failure (rather than clearing the
+  // curve) matches the same "keep the last good state while typing"
+  // convention GraphCanvas's own path/point/exact cells use.
+  function updateLatex(nextLatex: string) {
+    setLatexInput(nextLatex);
+    try {
+      const source = Symbolic.toString(Symbolic.fromLatex(nextLatex));
+      setExprInput(source);
+      graph.set(ids.expr, source);
+    } catch {
+      // Leave exprInput/the graph's expression at its last good value.
+    }
+  }
+
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.5rem", margin: "0.25rem 0" }}>
       <input
@@ -127,9 +150,27 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
         value={`#${color.toString(16).padStart(6, "0")}`}
         onChange={(e) => graph.set(ids.color, Number.parseInt(e.target.value.slice(1), 16))}
       />
-      <label>
-        y ={" "}
-        <input value={exprInput} onChange={(e) => updateExpr(e.target.value)} style={{ font: "inherit", width: "18ch" }} />
+      {useMathKeyboard ? (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+          y = <MathInput latex={latexInput} onChange={updateLatex} style={{ minWidth: "10rem", display: "inline-block" }} />
+        </span>
+      ) : (
+        <label>
+          y ={" "}
+          <input value={exprInput} onChange={(e) => updateExpr(e.target.value)} style={{ font: "inherit", width: "18ch" }} />
+        </label>
+      )}
+      <label style={{ fontSize: "0.78rem", color: "#5b6b8c" }}>
+        <input
+          type="checkbox"
+          checked={useMathKeyboard}
+          onChange={(e) => {
+            const next = e.target.checked;
+            if (next) setLatexInput(toLatexOrEmpty(exprInput));
+            setUseMathKeyboard(next);
+          }}
+        />{" "}
+        math keyboard
       </label>
       {freeVars.map((name) => (
         <ParamSlider key={name} graph={graph} paramId={ids.param(name)} name={name} />
@@ -141,6 +182,14 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
       )}
     </div>
   );
+}
+
+function toLatexOrEmpty(source: string): string {
+  try {
+    return Symbolic.toLatex(Symbolic.parse(preprocessImplicitMultiplication(source)));
+  } catch {
+    return "";
+  }
 }
 
 function ParamSlider({ graph, paramId, name }: { graph: CellGraph; paramId: string; name: string }) {

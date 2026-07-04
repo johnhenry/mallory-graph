@@ -19,6 +19,7 @@
     "ecmanim": "^0.0.1",
     "katex": "^0.17.0",
     "mallory-math": "^0.2.0",
+    "mathlive": "^0.110.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "srvx": "^0.10.0",
