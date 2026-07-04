@@ -67,7 +67,7 @@ export function NotebookPanel() {
           </button>
         </div>
       ))}
-      <div style={{ display: "flex", gap: "0.5rem", margin: "0.5rem 0" }}>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", margin: "0.5rem 0" }}>
         <button type="button" onClick={addTextBlock}>
           + Text block
         </button>

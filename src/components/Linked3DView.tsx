@@ -21,8 +21,15 @@ export function Linked3DView() {
 
   return (
     <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-      <GraphCanvas cellId="pane-2d" defaultSource="sin(x)" graph={graph} />
-      <Graph3DCanvas cellId="pane-3d" defaultSource="sin(x)*cos(y)" graph={graph} />
+      {/* `minWidth: 0` overrides flexbox's default min-width:auto, which
+          would otherwise floor each pane at its (fixed-pixel canvas)
+          content size and defeat the canvas's own responsive shrinking. */}
+      <div style={{ minWidth: 0 }}>
+        <GraphCanvas cellId="pane-2d" defaultSource="sin(x)" graph={graph} />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <Graph3DCanvas cellId="pane-3d" defaultSource="sin(x)*cos(y)" graph={graph} />
+      </div>
     </div>
   );
 }

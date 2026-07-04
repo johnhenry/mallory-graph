@@ -12,7 +12,7 @@ import {
 } from "../lib/multi-graph-state.ts";
 import { drawExpressionLayer, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { saveGraph } from "../lib/saved-graphs.ts";
-import { toDataX, toDataY, toScreenX, toScreenY } from "../lib/viewport.ts";
+import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY } from "../lib/viewport.ts";
 import { ExpressionRow } from "./ExpressionRow.tsx";
 import { useCell } from "../lib/use-cell.ts";
 
@@ -145,11 +145,11 @@ export function GraphCanvasMulti() {
   }
 
   function canvasToDataCoords(e: PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
-    const rect = e.currentTarget.getBoundingClientRect();
     const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+    const { sx, sy } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);
     return {
-      x: toDataX(e.clientX - rect.left, viewport, WIDTH),
-      y: toDataY(e.clientY - rect.top, viewport, HEIGHT),
+      x: toDataX(sx, viewport, WIDTH),
+      y: toDataY(sy, viewport, HEIGHT),
     };
   }
 
@@ -308,7 +308,7 @@ export function GraphCanvasMulti() {
       {rowIds.map((id) => (
         <ExpressionRow key={id} graph={graph} rowId={id} onRemove={rowIds.length > 1 ? () => removeRow(id) : undefined} />
       ))}
-      <div style={{ margin: "0.5rem 0", display: "flex", gap: "0.5rem" }}>
+      <div style={{ margin: "0.5rem 0", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <button type="button" onClick={addRow}>
           + Add expression
         </button>

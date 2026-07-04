@@ -1,7 +1,7 @@
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CellGraph } from "../lib/cell-graph.ts";
-import { toDataX, toDataY, toScreenX, toScreenY, type Viewport } from "../lib/viewport.ts";
+import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY, type Viewport } from "../lib/viewport.ts";
 import { useCell } from "../lib/use-cell.ts";
 
 const WIDTH = 500;
@@ -110,9 +110,9 @@ export function GeometryPanel() {
   }
 
   function handleClick(e: MouseEvent<HTMLCanvasElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = toDataX(e.clientX - rect.left, VIEWPORT, WIDTH);
-    const y = toDataY(e.clientY - rect.top, VIEWPORT, HEIGHT);
+    const { sx, sy } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);
+    const x = toDataX(sx, VIEWPORT, WIDTH);
+    const y = toDataY(sy, VIEWPORT, HEIGHT);
 
     if (tool === "point") {
       addPoint(x, y);
@@ -159,7 +159,7 @@ export function GeometryPanel() {
 
   return (
     <div>
-      <div style={{ margin: "0.25rem 0", display: "flex", gap: "0.5rem" }}>
+      <div style={{ margin: "0.25rem 0", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         {(["point", "line", "circle"] as const).map((t) => (
           <label key={t}>
             <input

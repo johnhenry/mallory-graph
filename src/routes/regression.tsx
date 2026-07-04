@@ -10,7 +10,7 @@ function RegressionPage() {
     <div>
       <h1>mallory-graph — regression</h1>
       <details>
-        <summary>Linear regression (least squares) over a pasted (x, y) data set.</summary>
+        <summary>Linear regression (least squares) over a spreadsheet-style (x, y) row list.</summary>
         <p>
           Via <code>mallory-math</code>'s <code>Statistics.linearRegression</code>/<code>correlation</code> —
           previously fully implemented upstream but unused anywhere in the UI. v1 is linear only; a nonlinear

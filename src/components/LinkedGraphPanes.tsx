@@ -88,14 +88,21 @@ export function LinkedGraphPanes() {
 
   return (
     <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-      <GraphCanvas
-        cellId="pane-a"
-        defaultSource={PANE_DEFAULT_SOURCE["pane-a"]}
-        durationCellId={COMBINED_DURATION_CELL}
-        graph={graph}
-        syncUrl={false}
-      />
-      <GraphCanvas cellId="pane-b" defaultSource={PANE_DEFAULT_SOURCE["pane-b"]} graph={graph} showTransport={false} syncUrl={false} />
+      {/* `minWidth: 0` overrides flexbox's default min-width:auto, which
+          would otherwise floor each pane at its (fixed-pixel canvas)
+          content size and defeat the canvas's own responsive shrinking. */}
+      <div style={{ minWidth: 0 }}>
+        <GraphCanvas
+          cellId="pane-a"
+          defaultSource={PANE_DEFAULT_SOURCE["pane-a"]}
+          durationCellId={COMBINED_DURATION_CELL}
+          graph={graph}
+          syncUrl={false}
+        />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <GraphCanvas cellId="pane-b" defaultSource={PANE_DEFAULT_SOURCE["pane-b"]} graph={graph} showTransport={false} syncUrl={false} />
+      </div>
     </div>
   );
 }

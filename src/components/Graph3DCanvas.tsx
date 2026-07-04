@@ -130,7 +130,11 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
     camera.position.set(8, 8, 8);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(WIDTH, HEIGHT);
+    // `updateStyle=false` -- leaves the canvas's own CSS untouched so the
+    // global `canvas { max-width: 100%; height: auto }` mobile rule can
+    // scale it down; the drawing buffer stays a fixed WIDTH x HEIGHT
+    // regardless, matching PerspectiveCamera's aspect ratio.
+    renderer.setSize(WIDTH, HEIGHT, false);
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -195,13 +199,13 @@ export function Graph3DCanvas({ cellId = "pane-3d", defaultSource = "x^2-y^2", g
         />
       </label>
       {freeVars.length > 0 && (
-        <div style={{ display: "flex", gap: "1rem", margin: "0.5rem 0" }}>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", margin: "0.5rem 0" }}>
           {freeVars.map((name) => (
             <Slider3DControl key={name} graph={graph} ids={ids} name={name} />
           ))}
         </div>
       )}
-      <div ref={containerRef} style={{ width: WIDTH, height: HEIGHT, border: "1px solid #ccc" }} />
+      <div ref={containerRef} style={{ maxWidth: WIDTH, border: "1px solid #ccc" }} />
       <p style={{ fontSize: "0.85rem", color: "#666" }}>Drag to orbit, scroll to zoom.</p>
     </div>
   );

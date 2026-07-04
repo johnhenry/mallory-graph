@@ -18,7 +18,7 @@ import { interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/ti
 import { AlgebraView } from "./AlgebraView.tsx";
 import { TexSpan } from "./TexSpan.tsx";
 import { useCell } from "../lib/use-cell.ts";
-import { toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
+import { canvasEventPoint, toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
 
 const STRUCTURE_OPTIONS: Array<{ label: string; modulus: number | null }> = [
   { label: "Real numbers", modulus: null },
@@ -530,9 +530,7 @@ export function GraphCanvas({
 
   function handlePointerDown(e: PointerEvent<HTMLCanvasElement>) {
     if (!point || modulus !== null) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { sx, sy } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);
     const handleSx = toScreenX(point.x, viewport, WIDTH);
     const handleSy = toScreenY(point.y, viewport, HEIGHT);
     if (Math.hypot(sx - handleSx, sy - handleSy) > HANDLE_HIT_RADIUS) return;
@@ -542,8 +540,7 @@ export function GraphCanvas({
 
   function handlePointerMove(e: PointerEvent<HTMLCanvasElement>) {
     if (!draggingRef.current) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
+    const { sx } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);
     const x = Math.min(viewport.xMax, Math.max(viewport.xMin, toDataX(sx, viewport, WIDTH)));
     graph.set(ids.pointX, x);
   }
@@ -571,7 +568,7 @@ export function GraphCanvas({
         <AlgebraView graph={graph} />
       </div>
       {freeVars.length > 0 && (
-        <div style={{ display: "flex", gap: "1rem", margin: "0.5rem 0" }}>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", margin: "0.5rem 0" }}>
           {freeVars.map((name) => (
             <SliderControl key={name} graph={graph} ids={ids} name={name} />
           ))}
@@ -599,7 +596,7 @@ export function GraphCanvas({
         )}
       </form>
       {showTransport && duration > 0 && (
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0.5rem 0" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", margin: "0.5rem 0" }}>
           <button type="button" onClick={() => setPlaying((p) => !p)}>
             {playing ? "Pause" : "Play"}
           </button>

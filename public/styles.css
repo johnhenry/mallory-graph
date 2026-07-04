@@ -1,13 +1,53 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+}
+
 body {
   font-family: system-ui, sans-serif;
   max-width: 640px;
+  width: 100%;
   margin: 4rem auto;
   padding: 0 1rem;
   color: #1a1a1a;
+  overflow-x: hidden;
 }
 
 code {
   background: #f0f0f0;
   padding: 0.15rem 0.35rem;
   border-radius: 4px;
+}
+
+/* Every canvas in the app is drawn at a fixed intrinsic resolution (see each
+   component's WIDTH/HEIGHT constants) but must never force the page wider
+   than the viewport on a phone -- this scales it down visually while the
+   drag/click handlers correct for the resulting CSS-vs-intrinsic-pixel
+   mismatch via `canvasEventPoint` (viewport.ts). `touch-action: none`
+   suppresses the browser's own scroll/pinch-zoom gesture during a drag so
+   it doesn't fight a component's own pointer-drag handling. */
+canvas {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  touch-action: none;
+}
+
+input,
+textarea,
+select,
+table {
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  body {
+    margin: 1.5rem auto;
+    padding: 0 0.75rem;
+  }
 }

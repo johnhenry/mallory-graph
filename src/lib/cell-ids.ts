@@ -191,13 +191,13 @@ export function cellIdsParametric(cellId: string) {
 export type CellIdsParametric = ReturnType<typeof cellIdsParametric>;
 
 /**
- * Cell-id namespacing for the regression panel (RegressionPanel.tsx) -- two
- * parallel data lists (x's, y's), distinct from every other panel's shape.
+ * Cell-id namespacing for the regression panel (RegressionPanel.tsx) -- one
+ * ordered row list (each row a spreadsheet-style {id, x, y}), distinct from
+ * every other panel's shape.
  */
 export function cellIdsRegression(cellId: string) {
   return {
-    xData: `regressionXData:${cellId}`,
-    yData: `regressionYData:${cellId}`,
+    rows: `regressionRows:${cellId}`,
     fit: `regressionFit:${cellId}`,
   };
 }
