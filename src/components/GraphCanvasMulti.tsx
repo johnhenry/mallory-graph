@@ -1,6 +1,6 @@
 import type { Path2D } from "mallory-math";
 import { useServerFn } from "@tanstack/react-start";
-import { type PointerEvent, useEffect, useRef, useState } from "react";
+import { type PointerEvent, useEffect, useRef, useState, type WheelEvent } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsMultiRow, EXPRESSION_LIST_CELL, VIEWPORT_CELL } from "../lib/cell-ids.ts";
 import {
@@ -70,9 +70,10 @@ function seedRow(
 /**
  * One shared CellGraph, one shared VIEWPORT_CELL, and an ordered
  * EXPRESSION_LIST_CELL of row ids -- each row's own cells (see
- * ExpressionRow.tsx's `useRowCells`) read the shared viewport, so panning it
- * would move every curve at once (v1 has no pan/zoom UI yet, but the wiring
- * already supports it -- see the Wave 2 design's shared-conductor framing).
+ * ExpressionRow.tsx's `useRowCells`) read the shared viewport, so
+ * drag-to-pan/wheel-to-zoom (see `handleCanvasPointerMove`/
+ * `handleCanvasWheel`) moves every curve at once, exactly the
+ * shared-conductor design the Wave 2 design anticipated.
  * This is the actual "multiple curves, one graph" capability that
  * GraphCanvas/LinkedGraphPanes don't have: LinkedGraphPanes shares one
  * CellGraph too, but each pane still owns its own separate `<canvas>` and
@@ -110,7 +111,11 @@ export function GraphCanvasMulti() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [annotating, setAnnotating] = useState(false);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-  const draggingAnnotationId = useRef<string | null>(null);
+  // A single gesture is either dragging one annotation or panning the shared
+  // viewport -- never both, so one ref (not two) tracks whichever is active.
+  const dragRef = useRef<
+    { kind: "annotation"; id: string } | { kind: "pan"; anchorX: number; anchorY: number; spanX: number; spanY: number } | null
+  >(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const saveGraphFn = useServerFn(saveGraph);
 
@@ -181,25 +186,66 @@ export function GraphCanvasMulti() {
     const hit = hitTestAnnotation(x, y);
     if (hit) {
       setSelectedAnnotationId(hit.id);
-      draggingAnnotationId.current = hit.id;
+      dragRef.current = { kind: "annotation", id: hit.id };
       e.currentTarget.setPointerCapture(e.pointerId);
-    } else {
-      setSelectedAnnotationId(null);
+      return;
     }
+    setSelectedAnnotationId(null);
+    // Anchor the data point currently under the cursor -- every subsequent
+    // pointermove recomputes the viewport from scratch so that same data
+    // point stays under the cursor, rather than accumulating per-frame
+    // deltas (which would drift under rounding error over a long drag).
+    const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+    dragRef.current = {
+      kind: "pan",
+      anchorX: x,
+      anchorY: y,
+      spanX: viewport.xMax - viewport.xMin,
+      spanY: viewport.yMax - viewport.yMin,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
   }
 
   function handleCanvasPointerMove(e: PointerEvent<HTMLCanvasElement>) {
-    const id = draggingAnnotationId.current;
-    if (!id) return;
-    const { x, y } = canvasToDataCoords(e);
-    graph.set(
-      ANNOTATIONS_CELL,
-      annotations.map((a) => (a.id === id ? { ...a, x, y } : a)),
-    );
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (drag.kind === "annotation") {
+      const { x, y } = canvasToDataCoords(e);
+      graph.set(
+        ANNOTATIONS_CELL,
+        annotations.map((a) => (a.id === drag.id ? { ...a, x, y } : a)),
+      );
+      return;
+    }
+    const { sx, sy } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);
+    const xMin = drag.anchorX - (sx / WIDTH) * drag.spanX;
+    const yMin = drag.anchorY - ((HEIGHT - sy) / HEIGHT) * drag.spanY;
+    graph.set(VIEWPORT_CELL, { xMin, xMax: xMin + drag.spanX, yMin, yMax: yMin + drag.spanY });
   }
 
   function handleCanvasPointerUp() {
-    draggingAnnotationId.current = null;
+    dragRef.current = null;
+  }
+
+  const ZOOM_STEP = 1.1;
+
+  /** Wheel-to-zoom, anchored on the cursor's data point (same anchor technique as panning). */
+  function handleCanvasWheel(e: WheelEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+    const { sx, sy } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);
+    const anchorX = toDataX(sx, viewport, WIDTH);
+    const anchorY = toDataY(sy, viewport, HEIGHT);
+    const factor = e.deltaY > 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+    const spanX = (viewport.xMax - viewport.xMin) * factor;
+    const spanY = (viewport.yMax - viewport.yMin) * factor;
+    const xMin = anchorX - (sx / WIDTH) * spanX;
+    const yMin = anchorY - ((HEIGHT - sy) / HEIGHT) * spanY;
+    graph.set(VIEWPORT_CELL, { xMin, xMax: xMin + spanX, yMin, yMax: yMin + spanY });
+  }
+
+  function resetView() {
+    graph.set(VIEWPORT_CELL, DEFAULT_MULTI_GRAPH_STATE.viewport);
   }
 
   function updateAnnotationLabel(id: string, label: string) {
@@ -325,7 +371,13 @@ export function GraphCanvasMulti() {
         <button type="button" onClick={handleSave}>
           Save to gallery
         </button>
+        <button type="button" onClick={resetView} title="Restore the default viewport">
+          Reset view
+        </button>
       </div>
+      <p style={{ fontSize: "0.78rem", color: "#5b6b8c", margin: "0.25rem 0" }}>
+        Drag the canvas to pan, scroll to zoom.
+      </p>
       {saveStatus && <p style={{ fontSize: "0.85rem", color: "#5b6b8c" }}>{saveStatus}</p>}
       <div>
         <canvas
@@ -334,12 +386,13 @@ export function GraphCanvasMulti() {
           height={HEIGHT}
           style={{
             border: "1px solid #ccc",
-            cursor: annotating ? "crosshair" : selectedAnnotationId ? "move" : "default",
+            cursor: annotating ? "crosshair" : selectedAnnotationId ? "move" : "grab",
             touchAction: "none",
           }}
           onPointerDown={handleCanvasPointerDown}
           onPointerMove={handleCanvasPointerMove}
           onPointerUp={handleCanvasPointerUp}
+          onWheel={handleCanvasWheel}
         />
       </div>
       {annotations.length > 0 && (

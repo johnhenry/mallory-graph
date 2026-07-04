@@ -47,8 +47,8 @@ function MultiPage() {
           and "Fork this view" is just opening that same URL in a new tab to explore an alternate path independently.
           "+ Annotate" then click the canvas drops a labeled note at that point — click a marker or its label to
           select it, drag a selected marker to move it, edit its label in the list, or "Jump" to recenter the
-          (currently pan/zoom-less) viewport on it — an Open-MCT-inspired point annotation with cross-pane-style
-          navigation, here within one shared view. Append <code>?embed=1</code> to this URL (or use it directly as
+          viewport on it (drag the canvas to pan, scroll to zoom, at any time) — an Open-MCT-inspired point
+          annotation with cross-pane-style navigation, here within one shared view. Append <code>?embed=1</code> to this URL (or use it directly as
           an <code>&lt;iframe&gt;</code> <code>src</code>) for a chrome-free embeddable view. Each row's "strict"
           toggle uses <code>mallory-math</code>'s <code>Symbolic.assertVariables</code>: once on, anything besides{" "}
           <code>x</code> is a hard error instead of silently becoming a new slider — useful for catching a typo
