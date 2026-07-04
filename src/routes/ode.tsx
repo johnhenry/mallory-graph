@@ -12,9 +12,11 @@ function OdePage() {
       <details>
         <summary>Numerically solves a first-order IVP dy/dx = f(x, y), plotted against its slope field.</summary>
         <p>
-          Via <code>Numerical.rk4</code>. v1 is a single first-order equation with a fixed (non-pannable) domain —
-          symbolic (closed-form) ODE solving is a later extension. Coupled systems of ODEs now have their own{" "}
-          <Link to="/ode-system">phase-portrait view</Link>.
+          Via <code>Numerical.rk4</code>. v1 is a single first-order equation with a fixed (non-pannable) domain.
+          Before falling back to that numeric plot, it also tries <code>Symbolic.solveOdeClosedForm</code> --
+          separable and linear-first-order equations with an elementary antiderivative get an exact "Closed form:"
+          line above the plot (most equations have no elementary closed form, so this is silently absent rather than
+          an error). Coupled systems of ODEs now have their own <Link to="/ode-system">phase-portrait view</Link>.
         </p>
       </details>
       <p>

@@ -1,4 +1,5 @@
 import { GraphUtils, Numerical, Symbolic, Vector, type Expr, type Path2D } from "mallory-math";
+import { exprToLatex } from "./expr-to-latex.ts";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import type { Domain } from "./sample-function.ts";
 
@@ -89,6 +90,37 @@ export function sampleOdeSolution(
   }
   const segments = runs.map((run) => GraphUtils.vectorToCurve(Vector.fromArray(run.map((p) => Vector.fromArray(p))), 2, SOLUTION_COLOR));
   return { stroke: (segments[0] as Path2D).stroke, commands: segments.flatMap((s) => s.commands) };
+}
+
+export interface OdeClosedFormAttempt {
+  found: boolean;
+  /** Present only when `found`. `false` means `latex` is an implicit relation (in both x and y), not an isolated y(x). */
+  explicit?: boolean;
+  latex?: string;
+}
+
+/**
+ * Best-effort wrapper around `Symbolic.solveOdeClosedForm` for the ODE
+ * panel: tries a closed-form solution and returns a renderable LaTeX
+ * string when one is found, or `{found:false}` uniformly for any failure
+ * (NotSeparableError, NoClosedFormError, a malformed expression, etc.) --
+ * most ODEs have no elementary closed form, so this is an expected, silent
+ * "nothing to show" outcome, not an error surfaced to the user.
+ * `sampleOdeSolution`'s numeric RK4 plot is unconditional and computed
+ * independently of this, so there's no separate "fall back to numeric"
+ * branch here beyond simply not rendering this extra line when
+ * `found` is `false`.
+ */
+export function attemptOdeClosedForm(expr: Expr | string, x0: number, y0: number): OdeClosedFormAttempt {
+  try {
+    const parsed = typeof expr === "string" ? Symbolic.parse(preprocessImplicitMultiplication(expr)) : expr;
+    const result = Symbolic.solveOdeClosedForm(parsed, x0, y0);
+    const rendered = result.explicit ? result.y : result.implicitRelation;
+    if (!rendered) return { found: false };
+    return { found: true, explicit: result.explicit, latex: exprToLatex(rendered) };
+  } catch {
+    return { found: false };
+  }
 }
 
 function compileSystem(spec: OdeSystemSpec): (t: number, a: number, b: number) => [number, number] {

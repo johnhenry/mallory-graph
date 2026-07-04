@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsOde } from "../lib/cell-ids.ts";
 import { drawPath, drawSlopeField, type Viewport } from "../lib/render-path.ts";
-import { sampleOdeSolution, sampleSlopeField, type SlopeFieldPoint } from "../lib/sample-ode.ts";
+import { attemptOdeClosedForm, type OdeClosedFormAttempt, sampleOdeSolution, sampleSlopeField, type SlopeFieldPoint } from "../lib/sample-ode.ts";
 import { useCell } from "../lib/use-cell.ts";
+import { TexSpan } from "./TexSpan.tsx";
 
 type SolutionResult = { ok: true; path: Path2D } | { ok: false; message: string };
 type SlopeFieldResult = { ok: true; points: SlopeFieldPoint[] } | { ok: false; message: string };
@@ -68,6 +69,14 @@ function useOdeGraph(cellId: string): CellGraph {
           return { ok: false, message: e instanceof Error ? e.message : String(e) };
         }
       });
+
+      graph.define(ids.closedForm, (): OdeClosedFormAttempt => {
+        const expr = graph.get<string>(ids.expr);
+        const x0 = Number(graph.get<string>(ids.x0));
+        const y0 = Number(graph.get<string>(ids.y0));
+        if ([x0, y0].some(Number.isNaN)) return { found: false };
+        return attemptOdeClosedForm(expr, x0, y0);
+      });
     }
     ref.current = graph;
   }
@@ -93,6 +102,7 @@ export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
   const yMax = useCell<string>(graph, ids.yMax);
   const solution = useCell<SolutionResult>(graph, ids.solution);
   const slopeField = useCell<SlopeFieldResult>(graph, ids.slopeField);
+  const closedForm = useCell<OdeClosedFormAttempt>(graph, ids.closedForm);
 
   const [exprInput, setExprInput] = useState(expr);
 
@@ -145,6 +155,11 @@ export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
           <input value={yMax} onChange={(e) => graph.set(ids.yMax, e.target.value)} style={{ font: "inherit", width: "6ch" }} />]
         </label>
       </div>
+      {closedForm.found && (
+        <p style={{ margin: "0.25rem 0" }}>
+          Closed form: <TexSpan tex={closedForm.explicit ? `y = ${closedForm.latex}` : `${closedForm.latex} = 0`} />
+        </p>
+      )}
       <canvas ref={canvasRef} width={WIDTH} height={HEIGHT} style={{ border: "1px solid #ccc" }} />
       {(!solution.ok || !slopeField.ok) && (
         <p style={{ color: "crimson" }}>{!solution.ok ? solution.message : !slopeField.ok ? slopeField.message : ""}</p>

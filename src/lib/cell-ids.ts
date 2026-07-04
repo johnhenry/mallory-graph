@@ -115,6 +115,7 @@ export function cellIdsOde(cellId: string) {
     yMax: `odeYMax:${cellId}`,
     solution: `odeSolution:${cellId}`,
     slopeField: `odeSlopeField:${cellId}`,
+    closedForm: `odeClosedForm:${cellId}`,
   };
 }
 
