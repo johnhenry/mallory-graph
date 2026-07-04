@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { structuralEqual, type CellGraph } from "../lib/cell-graph.ts";
 
 function formatValue(value: unknown): string {
@@ -50,6 +50,20 @@ export function AlgebraView({ graph, showAuxiliary = false }: { graph: CellGraph
     getSnapshot,
     getSnapshot,
   );
+
+  // `entries` above only changes reference when the cell *list's shape*
+  // does (a cell added/removed, role/auxiliary/hasValue flipping) -- by
+  // design, so a value-only change to an already-listed cell (e.g.
+  // dragging a free point, or any slider) doesn't itself trigger a
+  // re-render. But `formatValue(graph.get(e.id))` below always reads the
+  // *current* value directly, not from `entries` -- so the fix isn't to
+  // make the list-snapshot value-sensitive (that would reintroduce the
+  // new-array-every-call problem the comment above this hook works around,
+  // and would be genuinely expensive for a cell like a sampled mesh), just
+  // to prompt a re-render on every graph mutation, structural or not, so
+  // that inline read actually happens again.
+  const [, forceRerender] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => graph.subscribeAll(forceRerender), [graph]);
 
   const visible = entries
     .filter((e) => e.hasValue && e.role !== "unknown" && (showAuxiliary || !e.auxiliary))

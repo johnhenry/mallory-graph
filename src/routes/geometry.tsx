@@ -12,11 +12,13 @@ function GeometryPage() {
       <details>
         <summary>Compass-and-straightedge construction tools, built on CellGraph's free/dependent object model.</summary>
         <p>
-          Click with the Point tool to place a free point, then Line/Circle to connect existing points. Each
-          Line/Circle also gets a genuinely <em>dependent</em> length/radius cell reading its points' live
-          coordinates — the Objects list below shows both kinds side by side. v1 has no point-dragging yet (so the
-          dependent recompute isn't user-visible today), no transformations, and no measurement tools beyond
-          length/radius — all natural next steps once this core model is in place.
+          Click with the Point tool to place a free point (or drag an existing one), then Line/Circle to connect
+          existing points. Each Line/Circle also gets a genuinely <em>dependent</em> length/radius cell reading its
+          points' live coordinates — the Objects list below shows both kinds side by side. Reflect/Rotate/Translate
+          each construct a new point that is itself dependent on the point(s) it was built from, so dragging a free
+          point cascades through every line, circle, and transform built from it. Free points are drawn in blue,
+          dependent (constructed) points in gray-blue — only free points are draggable, since a dependent point's
+          position is entirely determined by what it was built from.
         </p>
       </details>
       <p>
