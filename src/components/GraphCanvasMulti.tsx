@@ -1,6 +1,6 @@
 import type { Path2D } from "mallory-math";
 import { useServerFn } from "@tanstack/react-start";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsMultiRow, EXPRESSION_LIST_CELL, VIEWPORT_CELL } from "../lib/cell-ids.ts";
 import {
@@ -18,6 +18,7 @@ import { useCell } from "../lib/use-cell.ts";
 
 const WIDTH = 600;
 const HEIGHT = 600;
+const ANNOTATION_HIT_RADIUS_PX = 10;
 
 // Not namespaced by any row id -- one shared annotation list per view,
 // mirroring EXPRESSION_LIST_CELL's own "one shared, unnamespaced list" shape.
@@ -108,6 +109,8 @@ export function GraphCanvasMulti() {
   const annotations = useCell<MultiGraphAnnotation[]>(graph, ANNOTATIONS_CELL);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [annotating, setAnnotating] = useState(false);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const draggingAnnotationId = useRef<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const saveGraphFn = useServerFn(saveGraph);
 
@@ -141,19 +144,73 @@ export function GraphCanvasMulti() {
     window.open(window.location.href, "_blank");
   }
 
-  function handleCanvasClick(e: MouseEvent<HTMLCanvasElement>) {
-    if (!annotating) return;
+  function canvasToDataCoords(e: PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
     const rect = e.currentTarget.getBoundingClientRect();
     const viewport = graph.get<Viewport>(VIEWPORT_CELL);
-    const x = toDataX(e.clientX - rect.left, viewport, WIDTH);
-    const y = toDataY(e.clientY - rect.top, viewport, HEIGHT);
-    const label = window.prompt("Label this point:", `Note ${annotations.length + 1}`);
-    if (label === null) return; // cancelled
-    graph.set(ANNOTATIONS_CELL, [...annotations, { id: crypto.randomUUID(), x, y, label }]);
-    setAnnotating(false);
+    return {
+      x: toDataX(e.clientX - rect.left, viewport, WIDTH),
+      y: toDataY(e.clientY - rect.top, viewport, HEIGHT),
+    };
+  }
+
+  /** Nearest annotation within a fixed pixel hit radius, or null if none is close enough. */
+  function hitTestAnnotation(x: number, y: number): MultiGraphAnnotation | null {
+    const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+    const hitDataRadius = (ANNOTATION_HIT_RADIUS_PX / WIDTH) * (viewport.xMax - viewport.xMin);
+    let closest: MultiGraphAnnotation | null = null;
+    let bestDist = hitDataRadius;
+    for (const a of annotations) {
+      const d = Math.hypot(a.x - x, a.y - y);
+      if (d < bestDist) {
+        bestDist = d;
+        closest = a;
+      }
+    }
+    return closest;
+  }
+
+  function handleCanvasPointerDown(e: PointerEvent<HTMLCanvasElement>) {
+    const { x, y } = canvasToDataCoords(e);
+    if (annotating) {
+      const label = window.prompt("Label this point:", `Note ${annotations.length + 1}`);
+      if (label === null) return; // cancelled
+      graph.set(ANNOTATIONS_CELL, [...annotations, { id: crypto.randomUUID(), x, y, label }]);
+      setAnnotating(false);
+      return;
+    }
+    const hit = hitTestAnnotation(x, y);
+    if (hit) {
+      setSelectedAnnotationId(hit.id);
+      draggingAnnotationId.current = hit.id;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } else {
+      setSelectedAnnotationId(null);
+    }
+  }
+
+  function handleCanvasPointerMove(e: PointerEvent<HTMLCanvasElement>) {
+    const id = draggingAnnotationId.current;
+    if (!id) return;
+    const { x, y } = canvasToDataCoords(e);
+    graph.set(
+      ANNOTATIONS_CELL,
+      annotations.map((a) => (a.id === id ? { ...a, x, y } : a)),
+    );
+  }
+
+  function handleCanvasPointerUp() {
+    draggingAnnotationId.current = null;
+  }
+
+  function updateAnnotationLabel(id: string, label: string) {
+    graph.set(
+      ANNOTATIONS_CELL,
+      annotations.map((a) => (a.id === id ? { ...a, label } : a)),
+    );
   }
 
   function removeAnnotation(id: string) {
+    if (selectedAnnotationId === id) setSelectedAnnotationId(null);
     graph.set(
       ANNOTATIONS_CELL,
       graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL).filter((a) => a.id !== id),
@@ -217,21 +274,34 @@ export function GraphCanvasMulti() {
         }
       }
       for (const a of graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL)) {
+        const selected = a.id === selectedAnnotationId;
         const sx = toScreenX(a.x, viewport, WIDTH);
         const sy = toScreenY(a.y, viewport, HEIGHT);
         ctx.save();
-        ctx.fillStyle = "#b8752e";
+        ctx.fillStyle = selected ? "#dc2626" : "#b8752e";
         ctx.beginPath();
-        ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+        ctx.arc(sx, sy, selected ? 6 : 4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.font = "12px sans-serif";
-        ctx.fillText(a.label, sx + 6, sy - 6);
+        if (selected) {
+          ctx.strokeStyle = "#dc2626";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(sx, sy, 10, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.font = selected ? "bold 12px sans-serif" : "12px sans-serif";
+        ctx.fillStyle = selected ? "#dc2626" : "#142033";
+        ctx.fillText(a.label, sx + 8, sy - 8);
         ctx.restore();
       }
     }
     redraw();
     return graph.subscribeAll(redraw);
-  }, [graph]);
+    // selectedAnnotationId isn't graph state, so it can't trigger a redraw via
+    // subscribeAll -- re-running this effect (which calls redraw() once
+    // immediately) on selection change is what keeps the highlight in sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, selectedAnnotationId]);
 
   return (
     <div>
@@ -262,26 +332,57 @@ export function GraphCanvasMulti() {
           ref={canvasRef}
           width={WIDTH}
           height={HEIGHT}
-          style={{ border: "1px solid #ccc", cursor: annotating ? "crosshair" : "default" }}
-          onClick={handleCanvasClick}
+          style={{
+            border: "1px solid #ccc",
+            cursor: annotating ? "crosshair" : selectedAnnotationId ? "move" : "default",
+            touchAction: "none",
+          }}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerUp={handleCanvasPointerUp}
         />
       </div>
       {annotations.length > 0 && (
         <div style={{ margin: "0.5rem 0" }}>
           <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>Annotations</div>
           <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-            {annotations.map((a) => (
-              <li key={a.id} style={{ margin: "0.15rem 0" }}>
-                <strong>{a.label}</strong> ({a.x.toFixed(2)}, {a.y.toFixed(2)}){" "}
-                <button type="button" onClick={() => jumpToAnnotation(a)}>
-                  Jump
-                </button>{" "}
-                <button type="button" onClick={() => removeAnnotation(a.id)}>
-                  Remove
-                </button>
-              </li>
-            ))}
+            {annotations.map((a) => {
+              const selected = a.id === selectedAnnotationId;
+              return (
+                <li key={a.id} style={{ margin: "0.15rem 0", background: selected ? "#fef2f2" : undefined }}>
+                  {selected ? (
+                    <input
+                      // biome-ignore lint: autoFocus is intentional here -- selecting an annotation should let you rename it immediately
+                      autoFocus
+                      value={a.label}
+                      onChange={(e) => updateAnnotationLabel(a.id, e.target.value)}
+                      style={{ font: "inherit", fontWeight: 600, width: "14ch" }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAnnotationId(a.id)}
+                      style={{ font: "inherit", fontWeight: 600, background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                      title="Select (then drag its marker on the canvas to move it, or edit its label here)"
+                    >
+                      {a.label}
+                    </button>
+                  )}{" "}
+                  ({a.x.toFixed(2)}, {a.y.toFixed(2)}){" "}
+                  <button type="button" onClick={() => jumpToAnnotation(a)}>
+                    Jump
+                  </button>{" "}
+                  <button type="button" onClick={() => removeAnnotation(a.id)}>
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+          <p style={{ fontSize: "0.78rem", color: "#5b6b8c" }}>
+            Click a marker or its label above to select it — drag a selected marker on the canvas to move it, or edit
+            its label in the list.
+          </p>
         </div>
       )}
     </div>
