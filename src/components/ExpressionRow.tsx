@@ -24,12 +24,16 @@ const AXIS_VARIABLE = "x";
  * second ExpressionRow pointed at an already-populated row id is a safe
  * no-op, matching `useExpressionGraph`'s own convention in GraphCanvas.tsx.
  */
+type PathResult = { ok: true; path: ReturnType<typeof sampleExprAdaptive> } | { ok: false; message: string };
+
 function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIdsMultiRow> {
   const ids = cellIdsMultiRow(rowId);
   const ref = useRef(false);
   if (!ref.current) {
     ref.current = true;
     if (!graph.has(ids.path)) {
+      graph.set(ids.strict, false, { auxiliary: true });
+
       graph.define(
         ids.freeVars,
         () => {
@@ -54,29 +58,49 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
         { auxiliary: true },
       );
 
-      let lastGoodPath: ReturnType<typeof sampleExprAdaptive> | null = null;
+      // Single source of truth for whether this row's expression currently
+      // parses/samples cleanly -- `path` (falls back to the last good
+      // sample) and `error` (surfaces the message) both just read from this,
+      // rather than duplicating the try/catch or writing to another cell as
+      // a side effect from inside a compute (which CellGraph's pull model
+      // doesn't support safely).
       graph.define(
-        ids.path,
-        () => {
+        ids.pathResult,
+        (): PathResult => {
           try {
             const viewport = graph.get<Viewport>(VIEWPORT_CELL);
             const params = graph.get<Record<string, number>>(ids.params);
             const color = graph.get<number>(ids.color);
-            lastGoodPath = sampleExprAdaptive(
-              graph.get<string>(ids.expr),
-              { min: viewport.xMin, max: viewport.xMax },
-              RESOLUTION,
-              AXIS_VARIABLE,
-              params,
-              color,
-            );
-          } catch {
-            if (!lastGoodPath) throw new Error(`Row "${rowId}" initial expression failed to parse`);
+            const source = graph.get<string>(ids.expr);
+            if (graph.get<boolean>(ids.strict)) {
+              const parsed = Symbolic.parse(preprocessImplicitMultiplication(source));
+              Symbolic.assertVariables(parsed, [AXIS_VARIABLE]);
+            }
+            const path = sampleExprAdaptive(source, { min: viewport.xMin, max: viewport.xMax }, RESOLUTION, AXIS_VARIABLE, params, color);
+            return { ok: true, path };
+          } catch (e) {
+            return { ok: false, message: e instanceof Error ? e.message : String(e) };
           }
+        },
+        { auxiliary: true },
+      );
+
+      let lastGoodPath: ReturnType<typeof sampleExprAdaptive> | null = null;
+      graph.define(
+        ids.path,
+        () => {
+          const result = graph.get<PathResult>(ids.pathResult);
+          if (result.ok) lastGoodPath = result.path;
+          if (!lastGoodPath) throw new Error(`Row "${rowId}" initial expression failed to parse`);
           return lastGoodPath;
         },
         { auxiliary: true },
       );
+
+      graph.define(ids.error, () => {
+        const result = graph.get<PathResult>(ids.pathResult);
+        return result.ok ? null : result.message;
+      });
 
       // A declarative "condition" derived from the curve's own path, read
       // by GraphCanvasMulti's draw loop to decide whether/how to mark root
@@ -101,6 +125,8 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
   const color = useCell<number>(graph, ids.color);
   const visible = useCell<boolean>(graph, ids.visible);
   const freeVars = useCell<string[]>(graph, ids.freeVars);
+  const strict = useCell<boolean>(graph, ids.strict);
+  const error = useCell<string | null>(graph, ids.error);
   const [exprInput, setExprInput] = useState(expr);
   const [useMathKeyboard, setUseMathKeyboard] = useState(false);
   const [latexInput, setLatexInput] = useState(() => toLatexOrEmpty(expr));
@@ -144,48 +170,58 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.5rem", margin: "0.25rem 0" }}>
-      <input
-        type="checkbox"
-        checked={visible}
-        onChange={(e) => graph.set(ids.visible, e.target.checked)}
-        title="Show/hide this curve"
-      />
-      <input
-        type="color"
-        value={`#${color.toString(16).padStart(6, "0")}`}
-        onChange={(e) => graph.set(ids.color, Number.parseInt(e.target.value.slice(1), 16))}
-      />
-      {useMathKeyboard ? (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-          y = <MathInput latex={latexInput} onChange={updateLatex} style={{ minWidth: "10rem", display: "inline-block" }} />
-        </span>
-      ) : (
-        <label>
-          y ={" "}
-          <input value={exprInput} onChange={(e) => updateExpr(e.target.value)} style={{ font: "inherit", width: "18ch" }} />
-        </label>
-      )}
-      <label style={{ fontSize: "0.78rem", color: "#5b6b8c" }}>
+    <div style={{ margin: "0.25rem 0" }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
         <input
           type="checkbox"
-          checked={useMathKeyboard}
-          onChange={(e) => {
-            const next = e.target.checked;
-            if (next) setLatexInput(toLatexOrEmpty(exprInput));
-            setUseMathKeyboard(next);
-          }}
-        />{" "}
-        math keyboard
-      </label>
-      {freeVars.map((name) => (
-        <ParamSlider key={name} graph={graph} paramId={ids.param(name)} name={name} />
-      ))}
-      {onRemove && (
-        <button type="button" onClick={onRemove} title="Remove this expression">
-          ✕
-        </button>
-      )}
+          checked={visible}
+          onChange={(e) => graph.set(ids.visible, e.target.checked)}
+          title="Show/hide this curve"
+        />
+        <input
+          type="color"
+          value={`#${color.toString(16).padStart(6, "0")}`}
+          onChange={(e) => graph.set(ids.color, Number.parseInt(e.target.value.slice(1), 16))}
+        />
+        {useMathKeyboard ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+            y = <MathInput latex={latexInput} onChange={updateLatex} style={{ minWidth: "10rem", display: "inline-block" }} />
+          </span>
+        ) : (
+          <label>
+            y ={" "}
+            <input value={exprInput} onChange={(e) => updateExpr(e.target.value)} style={{ font: "inherit", width: "18ch" }} />
+          </label>
+        )}
+        <label style={{ fontSize: "0.78rem", color: "#5b6b8c" }}>
+          <input
+            type="checkbox"
+            checked={useMathKeyboard}
+            onChange={(e) => {
+              const next = e.target.checked;
+              if (next) setLatexInput(toLatexOrEmpty(exprInput));
+              setUseMathKeyboard(next);
+            }}
+          />{" "}
+          math keyboard
+        </label>
+        <label
+          style={{ fontSize: "0.78rem", color: "#5b6b8c" }}
+          title={`When on, "${AXIS_VARIABLE}" is the only allowed variable -- anything else is an error instead of a new slider`}
+        >
+          <input type="checkbox" checked={strict} onChange={(e) => graph.set(ids.strict, e.target.checked)} />{" "}
+          strict ({AXIS_VARIABLE} only)
+        </label>
+        {freeVars.map((name) => (
+          <ParamSlider key={name} graph={graph} paramId={ids.param(name)} name={name} />
+        ))}
+        {onRemove && (
+          <button type="button" onClick={onRemove} title="Remove this expression">
+            ✕
+          </button>
+        )}
+      </div>
+      {error && <p style={{ fontSize: "0.8rem", color: "crimson", margin: "0.2rem 0 0" }}>{error}</p>}
     </div>
   );
 }

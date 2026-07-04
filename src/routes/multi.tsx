@@ -47,7 +47,9 @@ function MultiPage() {
         canvas drops a labeled note at that point — "Jump" recenters the (currently pan/zoom-less) viewport on it, an
         Open-MCT-inspired point annotation with cross-pane-style navigation, here within one shared view. Append{" "}
         <code>?embed=1</code> to this URL (or use it directly as an <code>&lt;iframe&gt;</code> <code>src</code>) for
-        a chrome-free embeddable view.
+        a chrome-free embeddable view. Each row's "strict" toggle uses <code>mallory-math</code>'s{" "}
+        <code>Symbolic.assertVariables</code>: once on, anything besides <code>x</code> is a hard error instead of
+        silently becoming a new slider — useful for catching a typo before it turns into a spurious parameter.
       </p>
       <p>
         <Link to="/">← back</Link>

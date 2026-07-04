@@ -138,7 +138,12 @@ export function cellIdsMultiRow(cellId: string) {
     visible: `multiVisible:${cellId}`,
     freeVars: `multiFreeVars:${cellId}`,
     params: `multiParams:${cellId}`,
+    /** Strict-variables mode (see Symbolic.assertVariables): when on, any variable besides the axis variable is a hard error rather than an auto-inferred slider. */
+    strict: `multiStrict:${cellId}`,
+    /** {ok:true,path} | {ok:false,message} -- the single source both `path` (falls back to the last good path) and `error` (surfaces the message) read from. */
+    pathResult: `multiPathResult:${cellId}`,
     path: `multiPath:${cellId}`,
+    error: `multiError:${cellId}`,
     roots: `multiRoots:${cellId}`,
     param: (name: string) => `multiParam:${cellId}:${name}`,
   };

@@ -60,12 +60,21 @@ const PATTERNS: QueryPattern[] = [
     // when there's exactly one real root: multiple roots don't reduce to a
     // single plottable expression, and returning just the first would
     // silently discard the others, so this falls through to null instead.
+    // The found root is numerically spot-checked via Symbolic.verifySolution
+    // before being returned -- a CAS "reviewer" pass (see the research
+    // roadmap): if the root doesn't actually zero the equation (a bug, or a
+    // numerically-fragile symbolic result), this falls through to null
+    // rather than silently plotting a wrong constant.
     regex: /^\s*solve\s+(.+?)(?:\s+for\s+(\w+))?\s*$/i,
     resolve: (match) => {
       const inner = equationToImplicitZero(preprocessImplicitMultiplication(match[1] as string));
       const variable = (match[2] as string | undefined) ?? "x";
       const roots = Symbolic.solve(inner, variable);
       if (roots.length !== 1) throw new Error("solve: ambiguous or no result for NL resolution");
+      const candidate = Symbolic.evaluate(roots[0]);
+      if (!Symbolic.verifySolution(inner, variable, candidate)) {
+        throw new Error("solve: candidate root failed verification");
+      }
       return Symbolic.toString(roots[0]);
     },
   },
