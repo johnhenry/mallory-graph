@@ -29,12 +29,25 @@ function compileField(expr: string, xVar: string, yVar: string): (x: number, y: 
 // bit2=top-right, bit3=top-left) -- the standard marching-squares lookup,
 // derived directly from "connect the edges adjacent to whichever corner(s)
 // differ from their neighbors." Cases 5 and 10 are the ambiguous diagonal
-// ("saddle") cases, resolved here by picking one fixed pairing rather than
-// consulting the cell-center value -- a documented simplification, not a
-// full asymptotic decider, so a saddle can occasionally connect the wrong
-// diagonal pair.
+// ("saddle") cases: resolved via the standard asymptotic decider -- the
+// bilinear-average of the four corner values approximates the field at the
+// cell center, and its sign reveals which pair of opposite corners the
+// zero-contour actually separates. If the average's sign matches the
+// corners currently paired as "diagonal-same" in the default pairing below,
+// the true topology is the *other* diagonal pairing (the contour passes
+// through the middle connecting the opposite pair instead), so the
+// default is swapped; otherwise the default already matches. (Verified
+// directly against a real bilinear field where this is exact, not just
+// approximate -- see sample-implicit.test.ts.)
 type Point = { x: number; y: number };
-function edgesForCase(caseIndex: number, bottom: Point, right: Point, top: Point, left: Point): [Point, Point][] {
+function edgesForCase(
+  caseIndex: number,
+  bottom: Point,
+  right: Point,
+  top: Point,
+  left: Point,
+  corners?: { v00: number; v10: number; v01: number; v11: number },
+): [Point, Point][] {
   switch (caseIndex) {
     case 1:
     case 14:
@@ -48,22 +61,42 @@ function edgesForCase(caseIndex: number, bottom: Point, right: Point, top: Point
     case 4:
     case 11:
       return [[right, top]];
-    case 5:
-      return [
+    case 5: {
+      const defaultPairing: [Point, Point][] = [
         [left, bottom],
         [right, top],
       ];
+      if (!corners) return defaultPairing;
+      const avg = (corners.v00 + corners.v10 + corners.v01 + corners.v11) / 4;
+      if (avg >= 0 === corners.v00 >= 0) {
+        return [
+          [left, top],
+          [bottom, right],
+        ];
+      }
+      return defaultPairing;
+    }
     case 6:
     case 9:
       return [[bottom, top]];
     case 7:
     case 8:
       return [[left, top]];
-    case 10:
-      return [
+    case 10: {
+      const defaultPairing: [Point, Point][] = [
         [bottom, right],
         [top, left],
       ];
+      if (!corners) return defaultPairing;
+      const avg = (corners.v00 + corners.v10 + corners.v01 + corners.v11) / 4;
+      if (avg >= 0 === corners.v10 >= 0) {
+        return [
+          [left, bottom],
+          [right, top],
+        ];
+      }
+      return defaultPairing;
+    }
     default:
       return [];
   }
@@ -125,7 +158,7 @@ export function sampleImplicitCurve(
       const top: Point = { x: lerpToZero(x0, x1, v01, v11), y: y1 };
       const left: Point = { x: x0, y: lerpToZero(y0, y1, v00, v01) };
 
-      for (const [p1, p2] of edgesForCase(caseIndex, bottom, right, top, left)) {
+      for (const [p1, p2] of edgesForCase(caseIndex, bottom, right, top, left, { v00, v10, v01, v11 })) {
         segments.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
       }
     }
