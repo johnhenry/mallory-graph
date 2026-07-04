@@ -1,11 +1,36 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { GraphCanvasMulti } from "../components/GraphCanvasMulti.tsx";
 
+interface MultiSearch {
+  embed?: boolean;
+}
+
 export const Route = createFileRoute("/multi")({
+  validateSearch: (search: Record<string, unknown>): MultiSearch => ({
+    embed: search.embed === "1" || search.embed === true,
+  }),
   component: MultiPage,
 });
 
+/**
+ * `?embed=1` hides the page chrome (title, description, back-link) so this
+ * route can be dropped into an `<iframe>` elsewhere and read as just the
+ * interactive view -- the simplest form of the "embeddable widget" item
+ * from the research roadmap, resolved via TanStack Router's typed search
+ * params (validated identically during SSR and client nav, so there's no
+ * hydration mismatch from branching on `window.location` directly).
+ */
 function MultiPage() {
+  const { embed } = Route.useSearch();
+
+  if (embed) {
+    return (
+      <div>
+        <GraphCanvasMulti />
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1>mallory-graph — multiple expressions, one graph</h1>
@@ -20,7 +45,9 @@ function MultiPage() {
         annotations, and the viewport) lives in the URL, so reload restores the session, and "Fork this view" is just
         opening that same URL in a new tab to explore an alternate path independently. "+ Annotate" then click the
         canvas drops a labeled note at that point — "Jump" recenters the (currently pan/zoom-less) viewport on it, an
-        Open-MCT-inspired point annotation with cross-pane-style navigation, here within one shared view.
+        Open-MCT-inspired point annotation with cross-pane-style navigation, here within one shared view. Append{" "}
+        <code>?embed=1</code> to this URL (or use it directly as an <code>&lt;iframe&gt;</code> <code>src</code>) for
+        a chrome-free embeddable view.
       </p>
       <p>
         <Link to="/">← back</Link>
