@@ -57,7 +57,7 @@ export interface SystemSolverPanelProps {
   cellId?: string;
 }
 
-/** v1 is fixed at 2 equations/2 variables -- a general N-equation add/remove UI is a later extension. */
+/** N equations in N variables -- Symbolic.solveSystem itself is already N-safe; this just adds add/remove-row UI on top. */
 export function SystemSolverPanel({ cellId = "system-1" }: SystemSolverPanelProps = {}) {
   const graph = useSystemGraph(cellId);
   const ids = cellIdsSystem(cellId);
@@ -73,6 +73,18 @@ export function SystemSolverPanel({ cellId = "system-1" }: SystemSolverPanelProp
     graph.set(ids.equations, next);
   }
 
+  function addEquation() {
+    const next = [...equationInputs, ""];
+    setEquationInputs(next);
+    graph.set(ids.equations, next);
+  }
+
+  function removeEquation(i: number) {
+    const next = equationInputs.filter((_, idx) => idx !== i);
+    setEquationInputs(next);
+    graph.set(ids.equations, next);
+  }
+
   function updateVariables(value: string) {
     setVariablesInput(value);
     graph.set(ids.variables, value);
@@ -81,7 +93,7 @@ export function SystemSolverPanel({ cellId = "system-1" }: SystemSolverPanelProp
   return (
     <div>
       {equationInputs.map((eq, i) => (
-        <div key={i} style={{ margin: "0.25rem 0" }}>
+        <div key={i} style={{ margin: "0.25rem 0", display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
           <label>
             Equation {i + 1} (= 0 implicitly, or write "= value"):{" "}
             <input
@@ -90,8 +102,20 @@ export function SystemSolverPanel({ cellId = "system-1" }: SystemSolverPanelProp
               style={{ font: "inherit", width: "28ch" }}
             />
           </label>
+          <button
+            type="button"
+            onClick={() => removeEquation(i)}
+            disabled={equationInputs.length <= 1}
+            aria-label="Remove equation"
+            title="Remove equation"
+          >
+            ✕
+          </button>
         </div>
       ))}
+      <button type="button" onClick={addEquation} style={{ margin: "0.25rem 0" }}>
+        + Add equation
+      </button>
       <div style={{ margin: "0.25rem 0" }}>
         <label>
           Variables (comma-separated):{" "}

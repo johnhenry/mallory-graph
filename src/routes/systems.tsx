@@ -13,7 +13,8 @@ function SystemsPage() {
         <summary>Solves a system of linear equations via Symbolic.solveSystem.</summary>
         <p>
           Bridging to <code>MatrixMath</code>'s LU-based solver. Throws on a genuinely nonlinear or singular system
-          rather than returning a wrong answer. v1 is fixed at 2 equations/2 variables.
+          rather than returning a wrong answer. Add or remove equations freely -- just keep the equation count
+          matching the variable count (a square system).
         </p>
       </details>
       <p>
