@@ -106,6 +106,41 @@ export function drawFilledArea(
   ctx.restore();
 }
 
+/**
+ * Draw a grid of short line segments, each centered at (x,y) and oriented at
+ * the local slope dy/dx = f(x,y) -- a fixed pixel half-length regardless of
+ * the slope's magnitude (direction carries the information here, not
+ * length), so a near-vertical slope doesn't visually dominate a near-zero
+ * one.
+ */
+export function drawSlopeField(
+  ctx: CanvasRenderingContext2D,
+  points: Array<{ x: number; y: number; slope: number }>,
+  viewport: Viewport,
+  width: number,
+  height: number,
+  halfLengthPx = 8,
+  color = "rgba(37, 99, 235, 0.5)",
+): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  for (const { x, y, slope } of points) {
+    const sx = toScreenX(x, viewport, width);
+    const sy = toScreenY(y, viewport, height);
+    // Screen-space y is flipped vs. data-space y, so a positive dy/dx must
+    // tilt up-and-to-the-right on screen -- i.e. toward *decreasing* sy.
+    const angle = Math.atan2(-slope, 1);
+    const dx = Math.cos(angle) * halfLengthPx;
+    const dy = Math.sin(angle) * halfLengthPx;
+    ctx.beginPath();
+    ctx.moveTo(sx - dx, sy - dy);
+    ctx.lineTo(sx + dx, sy + dy);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** Draw a set of discrete data-space points as a scatter (used for finite-structure plots, e.g. GF(7)). */
 export function drawScatter(
   ctx: CanvasRenderingContext2D,

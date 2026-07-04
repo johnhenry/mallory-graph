@@ -23,6 +23,12 @@ function HomePage() {
       <p>
         <Link to="/systems">System of equations solver →</Link>
       </p>
+      <p>
+        <Link to="/statistics">Statistics &amp; probability →</Link>
+      </p>
+      <p>
+        <Link to="/ode">Differential equations →</Link>
+      </p>
       <GraphCanvas />
     </div>
   );

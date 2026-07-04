@@ -8,6 +8,7 @@
  * that doesn't match a known phrasing, or that fails to resolve.
  */
 import { Symbolic } from "mallory-math";
+import { equationToImplicitZero } from "./equation-to-zero.ts";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 
 interface QueryPattern {
@@ -44,6 +45,42 @@ const PATTERNS: QueryPattern[] = [
   {
     regex: /^\s*simplify\s+(.+)$/i,
     resolve: (match) => Symbolic.toString(Symbolic.simplify(preprocessImplicitMultiplication(match[1] as string))),
+  },
+  {
+    regex: /^\s*factor\s+(.+)$/i,
+    resolve: (match) => Symbolic.toString(Symbolic.factor(preprocessImplicitMultiplication(match[1] as string))),
+  },
+  {
+    regex: /^\s*expand\s+(.+)$/i,
+    resolve: (match) => Symbolic.toString(Symbolic.expand(preprocessImplicitMultiplication(match[1] as string))),
+  },
+  {
+    // "solve X" or "solve X for v" -- accepts "lhs = rhs" via the same
+    // implicit-zero conversion the system-solver panel uses. Only resolves
+    // when there's exactly one real root: multiple roots don't reduce to a
+    // single plottable expression, and returning just the first would
+    // silently discard the others, so this falls through to null instead.
+    regex: /^\s*solve\s+(.+?)(?:\s+for\s+(\w+))?\s*$/i,
+    resolve: (match) => {
+      const inner = equationToImplicitZero(preprocessImplicitMultiplication(match[1] as string));
+      const variable = (match[2] as string | undefined) ?? "x";
+      const roots = Symbolic.solve(inner, variable);
+      if (roots.length !== 1) throw new Error("solve: ambiguous or no result for NL resolution");
+      return Symbolic.toString(roots[0]);
+    },
+  },
+  {
+    // "limit of X as x approaches A" (also accepts "->"/"→", and
+    // "infinity"/"-infinity" for A).
+    regex:
+      /^\s*(?:the\s+)?limit\s+of\s+(.+?)\s+as\s+(\w+)\s*(?:approaches|->|→)\s*(-?infinity|-?[\d.]+)\s*$/i,
+    resolve: (match) => {
+      const inner = preprocessImplicitMultiplication(match[1] as string);
+      const variable = match[2] as string;
+      const pointText = (match[3] as string).toLowerCase();
+      const point = pointText === "infinity" ? Infinity : pointText === "-infinity" ? -Infinity : Number(pointText);
+      return String(Symbolic.limit(inner, variable, point));
+    },
   },
 ];
 

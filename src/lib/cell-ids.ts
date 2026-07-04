@@ -71,3 +71,46 @@ export function cellIdsSystem(cellId: string) {
 }
 
 export type CellIdsSystem = ReturnType<typeof cellIdsSystem>;
+
+/**
+ * Cell-id namespacing for the statistics/probability panel
+ * (StatisticsPanel.tsx) -- another different input shape (a raw data-value
+ * list plus separate distribution-query parameters), so like
+ * `cellIdsSystem` it gets its own small, purpose-specific set.
+ */
+export function cellIdsStatistics(cellId: string) {
+  return {
+    data: `statsData:${cellId}`,
+    summary: `statsSummary:${cellId}`,
+    distMean: `statsDistMean:${cellId}`,
+    distSd: `statsDistSd:${cellId}`,
+    queryLower: `statsQueryLower:${cellId}`,
+    queryUpper: `statsQueryUpper:${cellId}`,
+    query: `statsQuery:${cellId}`,
+  };
+}
+
+export type CellIdsStatistics = ReturnType<typeof cellIdsStatistics>;
+
+/**
+ * Cell-id namespacing for the ODE solver/slope-field panel (OdePanel.tsx) --
+ * a two-variable f(x,y) expression plus an initial condition and a
+ * rectangular domain, yet another shape distinct from `cellIds`'s
+ * single-axis-variable model, so it gets its own small set like
+ * `cellIdsSystem`/`cellIdsStatistics`.
+ */
+export function cellIdsOde(cellId: string) {
+  return {
+    expr: `odeExpr:${cellId}`,
+    x0: `odeX0:${cellId}`,
+    y0: `odeY0:${cellId}`,
+    xMin: `odeXMin:${cellId}`,
+    xMax: `odeXMax:${cellId}`,
+    yMin: `odeYMin:${cellId}`,
+    yMax: `odeYMax:${cellId}`,
+    solution: `odeSolution:${cellId}`,
+    slopeField: `odeSlopeField:${cellId}`,
+  };
+}
+
+export type CellIdsOde = ReturnType<typeof cellIdsOde>;

@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemsRouteImport } from './routes/systems'
 import { Route as Surface3dRouteImport } from './routes/surface-3d'
+import { Route as StatisticsRouteImport } from './routes/statistics'
+import { Route as OdeRouteImport } from './routes/ode'
 import { Route as LinkedRouteImport } from './routes/linked'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +24,16 @@ const SystemsRoute = SystemsRouteImport.update({
 const Surface3dRoute = Surface3dRouteImport.update({
   id: '/surface-3d',
   path: '/surface-3d',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatisticsRoute = StatisticsRouteImport.update({
+  id: '/statistics',
+  path: '/statistics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OdeRoute = OdeRouteImport.update({
+  id: '/ode',
+  path: '/ode',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LinkedRoute = LinkedRouteImport.update({
@@ -38,12 +50,16 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
+  '/ode': typeof OdeRoute
+  '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
+  '/ode': typeof OdeRoute
+  '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
 }
@@ -51,20 +67,32 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/linked': typeof LinkedRoute
+  '/ode': typeof OdeRoute
+  '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/linked' | '/surface-3d' | '/systems'
+  fullPaths:
+    '/' | '/linked' | '/ode' | '/statistics' | '/surface-3d' | '/systems'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/linked' | '/surface-3d' | '/systems'
-  id: '__root__' | '/' | '/linked' | '/surface-3d' | '/systems'
+  to: '/' | '/linked' | '/ode' | '/statistics' | '/surface-3d' | '/systems'
+  id:
+    | '__root__'
+    | '/'
+    | '/linked'
+    | '/ode'
+    | '/statistics'
+    | '/surface-3d'
+    | '/systems'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LinkedRoute: typeof LinkedRoute
+  OdeRoute: typeof OdeRoute
+  StatisticsRoute: typeof StatisticsRoute
   Surface3dRoute: typeof Surface3dRoute
   SystemsRoute: typeof SystemsRoute
 }
@@ -83,6 +111,20 @@ declare module '@tanstack/react-router' {
       path: '/surface-3d'
       fullPath: '/surface-3d'
       preLoaderRoute: typeof Surface3dRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/statistics': {
+      id: '/statistics'
+      path: '/statistics'
+      fullPath: '/statistics'
+      preLoaderRoute: typeof StatisticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ode': {
+      id: '/ode'
+      path: '/ode'
+      fullPath: '/ode'
+      preLoaderRoute: typeof OdeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/linked': {
@@ -105,6 +147,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LinkedRoute: LinkedRoute,
+  OdeRoute: OdeRoute,
+  StatisticsRoute: StatisticsRoute,
   Surface3dRoute: Surface3dRoute,
   SystemsRoute: SystemsRoute,
 }
