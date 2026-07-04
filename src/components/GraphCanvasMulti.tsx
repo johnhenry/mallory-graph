@@ -1,4 +1,5 @@
 import type { Path2D } from "mallory-math";
+import { useServerFn } from "@tanstack/react-start";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsMultiRow, EXPRESSION_LIST_CELL, VIEWPORT_CELL } from "../lib/cell-ids.ts";
@@ -10,6 +11,7 @@ import {
   type MultiGraphState,
 } from "../lib/multi-graph-state.ts";
 import { drawExpressionLayer, drawScatter, type Viewport } from "../lib/render-path.ts";
+import { saveGraph } from "../lib/saved-graphs.ts";
 import { toDataX, toDataY, toScreenX, toScreenY } from "../lib/viewport.ts";
 import { ExpressionRow } from "./ExpressionRow.tsx";
 import { useCell } from "../lib/use-cell.ts";
@@ -25,6 +27,29 @@ const ANNOTATIONS_CELL = "annotations";
 // or exhaustive palette, just enough that a handful of curves stay visually
 // distinguishable before a user reaches for the color picker themselves.
 const PALETTE = [0x2563eb, 0xdc2626, 0x16a34a, 0xd97706, 0x9333ea, 0x0891b2];
+
+/** Builds the full serializable state of a multi-graph -- shared by the URL-sync effect and the save-to-gallery handler. */
+function getCurrentMultiGraphState(graph: CellGraph): MultiGraphState {
+  const rowIds = graph.get<string[]>(EXPRESSION_LIST_CELL);
+  const rows = rowIds.map((id) => {
+    const ids = cellIdsMultiRow(id);
+    const freeVars = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
+    const params: Record<string, number> = {};
+    for (const name of freeVars) params[name] = graph.get<number>(ids.param(name));
+    return {
+      source: graph.get<string>(ids.expr),
+      color: graph.get<number>(ids.color),
+      visible: graph.get<boolean>(ids.visible),
+      params,
+    };
+  });
+  return {
+    v: 1,
+    rows,
+    viewport: graph.get<Viewport>(VIEWPORT_CELL),
+    annotations: graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL),
+  };
+}
 
 function seedRow(
   graph: CellGraph,
@@ -83,6 +108,20 @@ export function GraphCanvasMulti() {
   const annotations = useCell<MultiGraphAnnotation[]>(graph, ANNOTATIONS_CELL);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [annotating, setAnnotating] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveGraphFn = useServerFn(saveGraph);
+
+  async function handleSave() {
+    const title = window.prompt("Title for this saved graph:", "Untitled");
+    if (title === null) return;
+    setSaveStatus("Saving…");
+    try {
+      await saveGraphFn({ data: { title, state: getCurrentMultiGraphState(graph) } });
+      setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
+    } catch (e) {
+      setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   function addRow() {
     const id = crypto.randomUUID();
@@ -143,26 +182,7 @@ export function GraphCanvasMulti() {
   // the session and "fork" (above) is just opening the current URL anew.
   useEffect(() => {
     function writeUrl() {
-      const rowIds2 = graph.get<string[]>(EXPRESSION_LIST_CELL);
-      const rows = rowIds2.map((id) => {
-        const ids = cellIdsMultiRow(id);
-        const freeVars = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
-        const params: Record<string, number> = {};
-        for (const name of freeVars) params[name] = graph.get<number>(ids.param(name));
-        return {
-          source: graph.get<string>(ids.expr),
-          color: graph.get<number>(ids.color),
-          visible: graph.get<boolean>(ids.visible),
-          params,
-        };
-      });
-      const state: MultiGraphState = {
-        v: 1,
-        rows,
-        viewport: graph.get<Viewport>(VIEWPORT_CELL),
-        annotations: graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL),
-      };
-      window.history.replaceState(null, "", `#${encodeMultiGraphState(state)}`);
+      window.history.replaceState(null, "", `#${encodeMultiGraphState(getCurrentMultiGraphState(graph))}`);
     }
     writeUrl();
     return graph.subscribeAll(writeUrl);
@@ -232,7 +252,11 @@ export function GraphCanvasMulti() {
         >
           {annotating ? "Click the canvas to place a note…" : "+ Annotate"}
         </button>
+        <button type="button" onClick={handleSave}>
+          Save to gallery
+        </button>
       </div>
+      {saveStatus && <p style={{ fontSize: "0.85rem", color: "#5b6b8c" }}>{saveStatus}</p>}
       <div>
         <canvas
           ref={canvasRef}

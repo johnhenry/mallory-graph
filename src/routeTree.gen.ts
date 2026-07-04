@@ -19,6 +19,7 @@ import { Route as MultiRouteImport } from './routes/multi'
 import { Route as LinkedRouteImport } from './routes/linked'
 import { Route as ImplicitRouteImport } from './routes/implicit'
 import { Route as GeometryRouteImport } from './routes/geometry'
+import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as IndexRouteImport } from './routes/index'
 
 const SystemsRoute = SystemsRouteImport.update({
@@ -71,6 +72,11 @@ const GeometryRoute = GeometryRouteImport.update({
   path: '/geometry',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GalleryRoute = GalleryRouteImport.update({
+  id: '/gallery',
+  path: '/gallery',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -79,6 +85,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/gallery': typeof GalleryRoute
   '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/gallery': typeof GalleryRoute
   '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
@@ -106,6 +114,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/gallery': typeof GalleryRoute
   '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/gallery'
     | '/geometry'
     | '/implicit'
     | '/linked'
@@ -134,6 +144,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/gallery'
     | '/geometry'
     | '/implicit'
     | '/linked'
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/gallery'
     | '/geometry'
     | '/implicit'
     | '/linked'
@@ -161,6 +173,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  GalleryRoute: typeof GalleryRoute
   GeometryRoute: typeof GeometryRoute
   ImplicitRoute: typeof ImplicitRoute
   LinkedRoute: typeof LinkedRoute
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GeometryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gallery': {
+      id: '/gallery'
+      path: '/gallery'
+      fullPath: '/gallery'
+      preLoaderRoute: typeof GalleryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -257,6 +277,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  GalleryRoute: GalleryRoute,
   GeometryRoute: GeometryRoute,
   ImplicitRoute: ImplicitRoute,
   LinkedRoute: LinkedRoute,

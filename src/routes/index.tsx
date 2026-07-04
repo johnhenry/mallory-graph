@@ -44,6 +44,9 @@ function HomePage() {
       <p>
         <Link to="/geometry">Geometry construction →</Link>
       </p>
+      <p>
+        <Link to="/gallery">Gallery of saved graphs →</Link>
+      </p>
       <GraphCanvas />
     </div>
   );
