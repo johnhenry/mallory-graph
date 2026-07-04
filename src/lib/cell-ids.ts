@@ -82,8 +82,13 @@ export function cellIdsStatistics(cellId: string) {
   return {
     data: `statsData:${cellId}`,
     summary: `statsSummary:${cellId}`,
+    distType: `statsDistType:${cellId}`,
     distMean: `statsDistMean:${cellId}`,
     distSd: `statsDistSd:${cellId}`,
+    distN: `statsDistN:${cellId}`,
+    distP: `statsDistP:${cellId}`,
+    distLambda: `statsDistLambda:${cellId}`,
+    distDf: `statsDistDf:${cellId}`,
     queryLower: `statsQueryLower:${cellId}`,
     queryUpper: `statsQueryUpper:${cellId}`,
     query: `statsQuery:${cellId}`,

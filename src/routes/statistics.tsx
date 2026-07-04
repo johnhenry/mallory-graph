@@ -10,13 +10,14 @@ function StatisticsPage() {
     <div>
       <h1>mallory-graph — statistics &amp; probability</h1>
       <details>
-        <summary>Descriptive statistics plus a Normal-distribution interval-probability calculator.</summary>
+        <summary>Descriptive statistics plus an interval-probability calculator over five distributions.</summary>
         <p>
           Via <code>mallory-math</code>'s <code>Statistics</code> module (mean, median, standard deviation,
-          five-number summary), plus <code>Distributions.normal</code> for interval probability. v1 covers the Normal
-          distribution only — more distributions (<code>Distributions.binomial</code>/<code>poisson</code>/
-          <code>studentT</code>/<code>chiSquare</code>/etc. already exist upstream) and an interactive
-          draggable-marker axis are later extensions.
+          five-number summary), plus <code>Distributions.normal</code>/<code>binomial</code>/<code>poisson</code>/
+          <code>studentT</code>/<code>chiSquare</code> for interval probability — every distribution factory exposes
+          the same <code>cdf(x)</code> shape regardless of continuous/discrete, so P(lower ≤ X ≤ upper) is computed
+          identically across all five. An interactive draggable-marker axis (GeoGebra's Probability Calculator UX)
+          is a later extension.
         </p>
       </details>
       <p>

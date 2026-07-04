@@ -20,6 +20,16 @@ type SummaryResult =
 
 type QueryResult = { ok: true; lowerCdf: number; upperCdf: number; intervalProbability: number } | { ok: false; message: string };
 
+type DistType = "normal" | "binomial" | "poisson" | "studentT" | "chiSquare";
+
+const DIST_LABELS: Record<DistType, string> = {
+  normal: "Normal",
+  binomial: "Binomial",
+  poisson: "Poisson",
+  studentT: "Student's t",
+  chiSquare: "Chi-square",
+};
+
 const DEFAULT_DATA = "2, 4, 4, 4, 5, 5, 7, 9";
 
 function parseData(text: string): number[] {
@@ -44,8 +54,13 @@ function useStatisticsGraph(cellId: string): CellGraph {
     const ids = cellIdsStatistics(cellId);
     if (!graph.has(ids.data)) {
       graph.set(ids.data, DEFAULT_DATA);
+      graph.set(ids.distType, "normal" as DistType);
       graph.set(ids.distMean, "0");
       graph.set(ids.distSd, "1");
+      graph.set(ids.distN, "10");
+      graph.set(ids.distP, "0.5");
+      graph.set(ids.distLambda, "4");
+      graph.set(ids.distDf, "5");
       graph.set(ids.queryLower, "-1");
       graph.set(ids.queryUpper, "1");
 
@@ -75,20 +90,62 @@ function useStatisticsGraph(cellId: string): CellGraph {
         }
       });
 
-      // v1 is a Normal-distribution calculator only -- PDF/CDF at a point
-      // isn't shown separately since the interval query below subsumes it
-      // (a degenerate [x, x] interval), and no interactive draggable-marker
-      // axis widget yet (GeoGebra's Probability Calculator UX) -- that's a
-      // later extension once this basic numeric-input version is in place.
+      // PDF/CDF at a point isn't shown separately since the interval query
+      // below subsumes it (a degenerate [x, x] interval), and there's no
+      // interactive draggable-marker axis widget yet (GeoGebra's Probability
+      // Calculator UX) -- that's a later extension once this basic
+      // numeric-input version is in place. Every Distributions.* factory
+      // exposes the same `cdf(x)` shape regardless of continuous/discrete,
+      // so the interval-probability math below is identical across every
+      // distribution type -- only which factory (and which parameters) gets
+      // built differs.
       graph.define(ids.query, (): QueryResult => {
         try {
-          const mean = Number(graph.get<string>(ids.distMean));
-          const sd = Number(graph.get<string>(ids.distSd));
+          const distType = graph.get<DistType>(ids.distType);
           const lower = Number(graph.get<string>(ids.queryLower));
           const upper = Number(graph.get<string>(ids.queryUpper));
-          if ([mean, sd, lower, upper].some(Number.isNaN)) throw new Error("Every field must be a number.");
-          if (sd <= 0) throw new Error("Standard deviation must be positive.");
-          const dist = Distributions.normal(mean, sd);
+          if ([lower, upper].some(Number.isNaN)) throw new Error("Every field must be a number.");
+          let dist: { cdf(x: number): number };
+          switch (distType) {
+            case "normal": {
+              const mean = Number(graph.get<string>(ids.distMean));
+              const sd = Number(graph.get<string>(ids.distSd));
+              if ([mean, sd].some(Number.isNaN)) throw new Error("mean and sd must be numbers.");
+              if (sd <= 0) throw new Error("Standard deviation must be positive.");
+              dist = Distributions.normal(mean, sd);
+              break;
+            }
+            case "binomial": {
+              const n = Number(graph.get<string>(ids.distN));
+              const p = Number(graph.get<string>(ids.distP));
+              if ([n, p].some(Number.isNaN)) throw new Error("n and p must be numbers.");
+              if (!Number.isInteger(n) || n < 0) throw new Error("n must be a non-negative integer.");
+              if (p < 0 || p > 1) throw new Error("p must be between 0 and 1.");
+              dist = Distributions.binomial(n, p);
+              break;
+            }
+            case "poisson": {
+              const lambda = Number(graph.get<string>(ids.distLambda));
+              if (Number.isNaN(lambda)) throw new Error("lambda must be a number.");
+              if (lambda <= 0) throw new Error("lambda must be positive.");
+              dist = Distributions.poisson(lambda);
+              break;
+            }
+            case "studentT": {
+              const df = Number(graph.get<string>(ids.distDf));
+              if (Number.isNaN(df)) throw new Error("df must be a number.");
+              if (df <= 0) throw new Error("df must be positive.");
+              dist = Distributions.studentT(df);
+              break;
+            }
+            case "chiSquare": {
+              const df = Number(graph.get<string>(ids.distDf));
+              if (Number.isNaN(df)) throw new Error("df must be a number.");
+              if (df <= 0) throw new Error("df must be positive.");
+              dist = Distributions.chiSquare(df);
+              break;
+            }
+          }
           const lowerCdf = dist.cdf(lower);
           const upperCdf = dist.cdf(upper);
           return { ok: true, lowerCdf, upperCdf, intervalProbability: Math.max(0, upperCdf - lowerCdf) };
@@ -106,14 +163,19 @@ export interface StatisticsPanelProps {
   cellId?: string;
 }
 
-/** v1: descriptive statistics for an entered dataset, plus a Normal-distribution interval-probability calculator. */
+/** v1: descriptive statistics for an entered dataset, plus an interval-probability calculator over any of five distributions. */
 export function StatisticsPanel({ cellId = "statistics-1" }: StatisticsPanelProps = {}) {
   const graph = useStatisticsGraph(cellId);
   const ids = cellIdsStatistics(cellId);
   const data = useCell<string>(graph, ids.data);
   const summary = useCell<SummaryResult>(graph, ids.summary);
+  const distType = useCell<DistType>(graph, ids.distType);
   const distMean = useCell<string>(graph, ids.distMean);
   const distSd = useCell<string>(graph, ids.distSd);
+  const distN = useCell<string>(graph, ids.distN);
+  const distP = useCell<string>(graph, ids.distP);
+  const distLambda = useCell<string>(graph, ids.distLambda);
+  const distDf = useCell<string>(graph, ids.distDf);
   const queryLower = useCell<string>(graph, ids.queryLower);
   const queryUpper = useCell<string>(graph, ids.queryUpper);
   const query = useCell<QueryResult>(graph, ids.query);
@@ -150,24 +212,80 @@ export function StatisticsPanel({ cellId = "statistics-1" }: StatisticsPanelProp
         )}
       </div>
 
-      <h2>Normal distribution</h2>
+      <h2>Distribution</h2>
       <div style={{ margin: "0.25rem 0" }}>
         <label>
-          mean:{" "}
-          <input
-            value={distMean}
-            onChange={(e) => graph.set(ids.distMean, e.target.value)}
-            style={{ font: "inherit", width: "8ch" }}
-          />
-        </label>{" "}
-        <label>
-          sd:{" "}
-          <input
-            value={distSd}
-            onChange={(e) => graph.set(ids.distSd, e.target.value)}
-            style={{ font: "inherit", width: "8ch" }}
-          />
+          Distribution:{" "}
+          <select value={distType} onChange={(e) => graph.set(ids.distType, e.target.value as DistType)}>
+            {(Object.keys(DIST_LABELS) as DistType[]).map((t) => (
+              <option key={t} value={t}>
+                {DIST_LABELS[t]}
+              </option>
+            ))}
+          </select>
         </label>
+      </div>
+      <div style={{ margin: "0.25rem 0", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        {distType === "normal" && (
+          <>
+            <label>
+              mean:{" "}
+              <input
+                value={distMean}
+                onChange={(e) => graph.set(ids.distMean, e.target.value)}
+                style={{ font: "inherit", width: "8ch" }}
+              />
+            </label>
+            <label>
+              sd:{" "}
+              <input
+                value={distSd}
+                onChange={(e) => graph.set(ids.distSd, e.target.value)}
+                style={{ font: "inherit", width: "8ch" }}
+              />
+            </label>
+          </>
+        )}
+        {distType === "binomial" && (
+          <>
+            <label>
+              n:{" "}
+              <input
+                value={distN}
+                onChange={(e) => graph.set(ids.distN, e.target.value)}
+                style={{ font: "inherit", width: "8ch" }}
+              />
+            </label>
+            <label>
+              p:{" "}
+              <input
+                value={distP}
+                onChange={(e) => graph.set(ids.distP, e.target.value)}
+                style={{ font: "inherit", width: "8ch" }}
+              />
+            </label>
+          </>
+        )}
+        {distType === "poisson" && (
+          <label>
+            λ:{" "}
+            <input
+              value={distLambda}
+              onChange={(e) => graph.set(ids.distLambda, e.target.value)}
+              style={{ font: "inherit", width: "8ch" }}
+            />
+          </label>
+        )}
+        {(distType === "studentT" || distType === "chiSquare") && (
+          <label>
+            df:{" "}
+            <input
+              value={distDf}
+              onChange={(e) => graph.set(ids.distDf, e.target.value)}
+              style={{ font: "inherit", width: "8ch" }}
+            />
+          </label>
+        )}
       </div>
       <div style={{ margin: "0.25rem 0" }}>
         <label>
