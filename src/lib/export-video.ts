@@ -3,15 +3,20 @@
  * plus its current parameter timeline into a scripted ecmanim Scene
  * (Axes.plot + alwaysRedraw), then renders it to a video/GIF buffer.
  *
- * Deliberately does NOT use ValueTracker + Scene.play() to drive per-segment
- * timing: Scene.play()'s trailing-config `runTime` override relies on a
- * `_playConfig` marker that nothing in this ecmanim version ever sets, so a
- * custom per-segment duration can't be threaded through play() as written
- * upstream. Instead, a single time accumulator (advanced via a plain
- * `addUpdater` on the already-scene-safe Axes mobject) plus a lone
- * `scene.wait(duration)` drives the whole clip; `alwaysRedraw` re-samples the
- * curve every frame straight from `interpolateKeyframes`, sidestepping the
- * play()/runTime question entirely.
+ * Drives elapsed time via a real ValueTracker animated through
+ * `scene.play(tracker.animate..., {runTime})` -- ecmanim (as of 0.0.11)
+ * fixed the bug where a bare `{runTime}` config, without an undocumented
+ * internal `_playConfig` marker, silently fell through and crashed
+ * (GitHub issue #19), which is exactly what this render loop needs.
+ * `.animate`'s builder getter takes no config, and its default rate
+ * function is an eased `smooth` curve, not linear -- that would make
+ * parameters animate non-uniformly in time (speeding up mid-clip, slowing at
+ * the edges) versus the straight linear elapsed-time progression this
+ * export has always used, so the Transform is constructed directly with
+ * `rate_functions.linear` instead of going through `.animate`.
+ * `alwaysRedraw` still re-samples the curve every frame straight from
+ * `interpolateKeyframes`, reading the tracker's current (per-frame
+ * interpolated) value instead of a manually-accumulated `elapsed` variable.
  *
  * Phase 11b: rendering runs as a background job rather than inside the SSR
  * request -- a long/high-res export would otherwise hold a request open for
@@ -24,7 +29,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { Symbolic } from "mallory-math";
-import { Axes, alwaysRedraw, render } from "ecmanim/node";
+import { Axes, alwaysRedraw, rate_functions, render, Transform, ValueTracker } from "ecmanim/node";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { interpolateKeyframes, type Keyframe } from "./timeline.ts";
 
@@ -73,14 +78,12 @@ async function runExportJob(jobId: string, data: ExportVideoInput) {
         xRange: [viewport.xMin, viewport.xMax, (viewport.xMax - viewport.xMin) / 10],
         yRange: [viewport.yMin, viewport.yMax, (viewport.yMax - viewport.yMin) / 10],
       });
-      let elapsed = 0;
-      axes.addUpdater((_mob: unknown, dt: number) => {
-        elapsed += dt;
-      });
+      const elapsedTracker = new ValueTracker(0);
 
       const curve = alwaysRedraw(() =>
         axes.plot(
           (x: number) => {
+            const elapsed = elapsedTracker.getValue();
             const env: Record<string, number> = { ...params, x };
             for (const [name, track] of Object.entries(tracks)) {
               if (track) env[name] = interpolateKeyframes(track, elapsed);
@@ -91,8 +94,14 @@ async function runExportJob(jobId: string, data: ExportVideoInput) {
         ),
       );
 
+      // Not scene.add()'d: a ValueTracker has no visible geometry of its own
+      // (manim's convention too) -- it only needs to be handed to play() to
+      // drive its own interpolation, which alwaysRedraw's curve then reads.
       scene.add(axes, curve);
-      await scene.wait(duration);
+      const target = elapsedTracker.copy();
+      target.setValue(duration);
+      const advanceTime = new Transform(elapsedTracker, target, { rateFunc: rate_functions.linear });
+      await scene.play(advanceTime, { runTime: duration });
     }
 
     const { promises: fs } = await import("node:fs");
