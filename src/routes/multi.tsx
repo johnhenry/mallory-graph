@@ -17,8 +17,10 @@ function MultiPage() {
         <code>GraphCanvas</code>). Root crossings (where a curve meets y=0) are marked automatically, via a
         declarative "condition" cell decoupled from the drawing decision — the Open MCT-inspired pattern the roadmap
         flagged for flagging points of interest generally. The full state (every row, its color/visibility/sliders,
-        and the viewport) lives in the URL, so reload restores the session, and "Fork this view" is just opening
-        that same URL in a new tab to explore an alternate path independently.
+        annotations, and the viewport) lives in the URL, so reload restores the session, and "Fork this view" is just
+        opening that same URL in a new tab to explore an alternate path independently. "+ Annotate" then click the
+        canvas drops a labeled note at that point — "Jump" recenters the (currently pan/zoom-less) viewport on it, an
+        Open-MCT-inspired point annotation with cross-pane-style navigation, here within one shared view.
       </p>
       <p>
         <Link to="/">← back</Link>

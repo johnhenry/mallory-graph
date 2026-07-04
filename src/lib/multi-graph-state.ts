@@ -5,10 +5,19 @@
  * and gains color/visible instead). Same base64url-in-the-hash convention:
  * no server round-trip, Desmos-style.
  */
+export interface MultiGraphAnnotation {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+}
+
 export interface MultiGraphStateV1 {
   v: 1;
   rows: Array<{ source: string; color: number; visible: boolean; params: Record<string, number> }>;
   viewport: { xMin: number; xMax: number; yMin: number; yMax: number };
+  /** Optional so a fragment encoded before annotations existed still decodes -- treated as []. */
+  annotations?: MultiGraphAnnotation[];
 }
 
 export type MultiGraphState = MultiGraphStateV1;
@@ -20,6 +29,7 @@ export const DEFAULT_MULTI_GRAPH_STATE: MultiGraphState = {
     { source: "cos(x)", color: 0xdc2626, visible: true, params: {} },
   ],
   viewport: { xMin: -10, xMax: 10, yMin: -10, yMax: 10 },
+  annotations: [],
 };
 
 export function encodeMultiGraphState(state: MultiGraphState): string {
@@ -40,6 +50,15 @@ function isMultiGraphStateV1(value: unknown): value is MultiGraphStateV1 {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   if (v.v !== 1 || typeof v.viewport !== "object" || v.viewport === null || !Array.isArray(v.rows)) return false;
+  if (v.annotations !== undefined && !Array.isArray(v.annotations)) return false;
+  const annotationsValid = (v.annotations as unknown[] | undefined ?? []).every((a) => {
+    if (typeof a !== "object" || a === null) return false;
+    const note = a as Record<string, unknown>;
+    return (
+      typeof note.id === "string" && typeof note.x === "number" && typeof note.y === "number" && typeof note.label === "string"
+    );
+  });
+  if (!annotationsValid) return false;
   return v.rows.every((r) => {
     if (typeof r !== "object" || r === null) return false;
     const row = r as Record<string, unknown>;

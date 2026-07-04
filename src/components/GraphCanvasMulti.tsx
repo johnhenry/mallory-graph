@@ -1,19 +1,25 @@
 import type { Path2D } from "mallory-math";
-import { useEffect, useRef } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsMultiRow, EXPRESSION_LIST_CELL, VIEWPORT_CELL } from "../lib/cell-ids.ts";
 import {
   DEFAULT_MULTI_GRAPH_STATE,
   decodeMultiGraphState,
   encodeMultiGraphState,
+  type MultiGraphAnnotation,
   type MultiGraphState,
 } from "../lib/multi-graph-state.ts";
 import { drawExpressionLayer, drawScatter, type Viewport } from "../lib/render-path.ts";
+import { toDataX, toDataY, toScreenX, toScreenY } from "../lib/viewport.ts";
 import { ExpressionRow } from "./ExpressionRow.tsx";
 import { useCell } from "../lib/use-cell.ts";
 
 const WIDTH = 600;
 const HEIGHT = 600;
+
+// Not namespaced by any row id -- one shared annotation list per view,
+// mirroring EXPRESSION_LIST_CELL's own "one shared, unnamespaced list" shape.
+const ANNOTATIONS_CELL = "annotations";
 
 // Cycled by index (mod length) as rows are added -- not meant to be a large
 // or exhaustive palette, just enough that a handful of curves stay visually
@@ -65,6 +71,7 @@ function useMultiGraph(): CellGraph {
       seedRow(graph, id, row.source, row.color, row.visible, row.params);
     });
     graph.set(EXPRESSION_LIST_CELL, initialIds, { auxiliary: true });
+    graph.set(ANNOTATIONS_CELL, state.annotations ?? [], { auxiliary: true });
     ref.current = graph;
   }
   return ref.current;
@@ -73,7 +80,9 @@ function useMultiGraph(): CellGraph {
 export function GraphCanvasMulti() {
   const graph = useMultiGraph();
   const rowIds = useCell<string[]>(graph, EXPRESSION_LIST_CELL);
+  const annotations = useCell<MultiGraphAnnotation[]>(graph, ANNOTATIONS_CELL);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [annotating, setAnnotating] = useState(false);
 
   function addRow() {
     const id = crypto.randomUUID();
@@ -91,6 +100,42 @@ export function GraphCanvasMulti() {
 
   function forkView() {
     window.open(window.location.href, "_blank");
+  }
+
+  function handleCanvasClick(e: MouseEvent<HTMLCanvasElement>) {
+    if (!annotating) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+    const x = toDataX(e.clientX - rect.left, viewport, WIDTH);
+    const y = toDataY(e.clientY - rect.top, viewport, HEIGHT);
+    const label = window.prompt("Label this point:", `Note ${annotations.length + 1}`);
+    if (label === null) return; // cancelled
+    graph.set(ANNOTATIONS_CELL, [...annotations, { id: crypto.randomUUID(), x, y, label }]);
+    setAnnotating(false);
+  }
+
+  function removeAnnotation(id: string) {
+    graph.set(
+      ANNOTATIONS_CELL,
+      graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL).filter((a) => a.id !== id),
+    );
+  }
+
+  // "Jump to" a point/range annotation (Open MCT-inspired, per the research
+  // roadmap): re-centers the shared viewport on the annotation, keeping its
+  // current width/height -- v1 has no pan/zoom UI, so this is the one way
+  // the viewport ever moves, but it's real: every curve visibly recenters,
+  // since all rows already read VIEWPORT_CELL.
+  function jumpToAnnotation(a: MultiGraphAnnotation) {
+    const current = graph.get<Viewport>(VIEWPORT_CELL);
+    const halfWidth = (current.xMax - current.xMin) / 2;
+    const halfHeight = (current.yMax - current.yMin) / 2;
+    graph.set(VIEWPORT_CELL, {
+      xMin: a.x - halfWidth,
+      xMax: a.x + halfWidth,
+      yMin: a.y - halfHeight,
+      yMax: a.y + halfHeight,
+    });
   }
 
   // Mirrors GraphCanvas's own writeUrl/subscribeAll pattern: keeps the URL
@@ -111,7 +156,12 @@ export function GraphCanvasMulti() {
           params,
         };
       });
-      const state: MultiGraphState = { v: 1, rows, viewport: graph.get<Viewport>(VIEWPORT_CELL) };
+      const state: MultiGraphState = {
+        v: 1,
+        rows,
+        viewport: graph.get<Viewport>(VIEWPORT_CELL),
+        annotations: graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL),
+      };
       window.history.replaceState(null, "", `#${encodeMultiGraphState(state)}`);
     }
     writeUrl();
@@ -146,6 +196,18 @@ export function GraphCanvasMulti() {
           // draw on the next redraw once mounted.
         }
       }
+      for (const a of graph.get<MultiGraphAnnotation[]>(ANNOTATIONS_CELL)) {
+        const sx = toScreenX(a.x, viewport, WIDTH);
+        const sy = toScreenY(a.y, viewport, HEIGHT);
+        ctx.save();
+        ctx.fillStyle = "#b8752e";
+        ctx.beginPath();
+        ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = "12px sans-serif";
+        ctx.fillText(a.label, sx + 6, sy - 6);
+        ctx.restore();
+      }
     }
     redraw();
     return graph.subscribeAll(redraw);
@@ -163,10 +225,41 @@ export function GraphCanvasMulti() {
         <button type="button" onClick={forkView} title="Open this exact view in a new tab to explore an alternate path">
           Fork this view
         </button>
+        <button
+          type="button"
+          onClick={() => setAnnotating((a) => !a)}
+          style={annotating ? { background: "#b8752e", color: "white" } : undefined}
+        >
+          {annotating ? "Click the canvas to place a note…" : "+ Annotate"}
+        </button>
       </div>
       <div>
-        <canvas ref={canvasRef} width={WIDTH} height={HEIGHT} style={{ border: "1px solid #ccc" }} />
+        <canvas
+          ref={canvasRef}
+          width={WIDTH}
+          height={HEIGHT}
+          style={{ border: "1px solid #ccc", cursor: annotating ? "crosshair" : "default" }}
+          onClick={handleCanvasClick}
+        />
       </div>
+      {annotations.length > 0 && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>Annotations</div>
+          <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
+            {annotations.map((a) => (
+              <li key={a.id} style={{ margin: "0.15rem 0" }}>
+                <strong>{a.label}</strong> ({a.x.toFixed(2)}, {a.y.toFixed(2)}){" "}
+                <button type="button" onClick={() => jumpToAnnotation(a)}>
+                  Jump
+                </button>{" "}
+                <button type="button" onClick={() => removeAnnotation(a.id)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
