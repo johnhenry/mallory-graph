@@ -1,6 +1,15 @@
-import { useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
-import { notebookValueCellId } from "../lib/cell-ids.ts";
+import { cellIdsMultiRow, cellIdsNotebookBlock, notebookValueCellId } from "../lib/cell-ids.ts";
+import {
+  DEFAULT_NOTEBOOK_STATE,
+  decodeNotebookState,
+  encodeNotebookState,
+  type NotebookGraphBlockStateV1,
+  type NotebookState,
+} from "../lib/notebook-state.ts";
+import { saveGraph } from "../lib/saved-graphs.ts";
 import { NotebookGraphBlock } from "./NotebookGraphBlock.tsx";
 
 type Block =
@@ -8,21 +17,69 @@ type Block =
   | { id: string; type: "graph"; initialSource: string }
   | { id: string; type: "value"; name: string; value: number };
 
-// Fixed string ids (not crypto.randomUUID()) for the two seeded blocks --
-// this array is built at module scope, which SSR evaluates once server-side
-// and once client-side; a random id here would differ between the two,
-// producing a React key/hydration mismatch. New blocks added via the
-// buttons below are only ever created client-side (a user click), so
-// crypto.randomUUID() there is safe.
-const DEFAULT_BLOCKS: Block[] = [
-  {
-    id: "intro",
-    type: "text",
-    content:
-      "A reactive notebook: mix free-form notes with live graph cells and named value cells. Every graph cell below shares one CellGraph, so a graph cell's expression can reference an earlier value cell by name -- e.g. a value block named \"k\" makes \"k\" available to any graph cell below it, sourced live instead of getting its own independent slider. Referencing another graph cell's entire curve (not just a named scalar) is a later extension.",
-  },
-  { id: "graph-1", type: "graph", initialSource: "sin(x)" },
-];
+/**
+ * Seeds a "graph" block's rows/viewport into `graph` (mirrors
+ * GraphCanvasMulti's own `seedRow` loop), so by the time NotebookGraphBlock
+ * mounts and checks `graph.hasValue(blockIds.expressionList)`, it's already
+ * true and NotebookGraphBlock skips its own single-default-row seeding.
+ */
+function seedGraphBlock(graph: CellGraph, blockId: string, block: NotebookGraphBlockStateV1): void {
+  const blockIds = cellIdsNotebookBlock(blockId);
+  graph.set(blockIds.viewport, block.viewport, { auxiliary: true });
+  const rowIds = block.rows.map(() => crypto.randomUUID());
+  rowIds.forEach((rowId, i) => {
+    const row = block.rows[i] as NotebookGraphBlockStateV1["rows"][number];
+    const ids = cellIdsMultiRow(rowId);
+    graph.set(ids.expr, row.source);
+    graph.set(ids.color, row.color);
+    graph.set(ids.visible, row.visible);
+    for (const [name, value] of Object.entries(row.params)) graph.set(ids.param(name), value);
+  });
+  graph.set(blockIds.expressionList, rowIds, { auxiliary: true });
+}
+
+/** Converts a decoded/default NotebookState into this component's own Block[] shape, seeding `graph` for graph/value blocks as a side effect. Fresh crypto.randomUUID() ids are assigned here -- block ids aren't part of the serialized shape, only content/order is. */
+function hydrateBlocks(graph: CellGraph, state: NotebookState): Block[] {
+  return state.blocks.map((b) => {
+    const id = crypto.randomUUID();
+    if (b.type === "text") return { id, type: "text", content: b.content };
+    if (b.type === "value") {
+      graph.set(notebookValueCellId(b.name), b.value);
+      return { id, type: "value", name: b.name, value: b.value };
+    }
+    seedGraphBlock(graph, id, b);
+    return { id, type: "graph", initialSource: b.rows[0]?.source ?? "x" };
+  });
+}
+
+/** Builds the full serializable state of the notebook document -- shared by the URL-sync effect and the save-to-gallery handler. */
+function getCurrentNotebookState(graph: CellGraph, blocks: Block[]): NotebookState {
+  return {
+    v: 1,
+    blocks: blocks.map((block): NotebookState["blocks"][number] => {
+      if (block.type === "text") return { type: "text", content: block.content };
+      if (block.type === "value") return { type: "value", name: block.name, value: block.value };
+      const blockIds = cellIdsNotebookBlock(block.id);
+      const rowIds = graph.hasValue(blockIds.expressionList) ? graph.get<string[]>(blockIds.expressionList) : [];
+      const rows = rowIds.map((rowId) => {
+        const ids = cellIdsMultiRow(rowId);
+        const freeVars = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
+        const params: Record<string, number> = {};
+        for (const name of freeVars) params[name] = graph.get<number>(ids.param(name));
+        return {
+          source: graph.get<string>(ids.expr),
+          color: graph.get<number>(ids.color),
+          visible: graph.get<boolean>(ids.visible),
+          params,
+        };
+      });
+      const viewport = graph.hasValue(blockIds.viewport)
+        ? graph.get<NotebookGraphBlockStateV1["viewport"]>(blockIds.viewport)
+        : { xMin: -10, xMax: 10, yMin: -10, yMax: 10 };
+      return { type: "graph", rows, viewport };
+    }),
+  };
+}
 
 /**
  * v1 reactive notebook surface: an ordered, editable list of blocks (text,
@@ -38,16 +95,63 @@ const DEFAULT_BLOCKS: Block[] = [
  * Referencing another block's entire curve/function (not just a named
  * scalar) stays out of v1 scope.
  *
- * Ephemeral within the page (no save/load for the notebook document as a
- * whole; each graph block's viewport/expression-list cells are namespaced
- * per block via `cellIdsNotebookBlock`, but not URL-persisted the way
- * GraphCanvasMulti is).
+ * Hydrates from the URL hash (notebook-state.ts) when present, mirroring
+ * GraphCanvasMulti's own useMultiGraph mechanism exactly -- including its
+ * same latent SSR/hydration tradeoff: the `typeof window !== "undefined"`
+ * guard means a fresh server render always sees no hash (so server and a
+ * *hash-less* client load agree), but a page loaded directly with a
+ * pre-existing hash will decode differently between server and client,
+ * same as GraphCanvasMulti already does today. Not a new risk introduced
+ * here, just the same accepted tradeoff applied consistently.
+ *
+ * "Fork this view" and "Save to gallery" mirror GraphCanvasMulti's
+ * `forkView`/`handleSave` exactly. Block add/remove/reorder/text-edit is
+ * plain React state (not something `graph.subscribeAll` observes the way
+ * row add/remove already does via EXPRESSION_LIST_CELL in GraphCanvasMulti),
+ * so the URL-sync effect re-runs on every `blocks` change too, not just
+ * every graph mutation.
  */
 export function NotebookPanel() {
-  const [blocks, setBlocks] = useState<Block[]>(DEFAULT_BLOCKS);
   const graphRef = useRef<CellGraph | null>(null);
   if (!graphRef.current) graphRef.current = new CellGraph();
   const graph = graphRef.current;
+
+  const [blocks, setBlocks] = useState<Block[]>(() => {
+    const decoded = typeof window !== "undefined" ? decodeNotebookState(window.location.hash.slice(1)) : null;
+    return hydrateBlocks(graph, decoded ?? DEFAULT_NOTEBOOK_STATE);
+  });
+
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveGraphFn = useServerFn(saveGraph);
+
+  function forkView() {
+    window.open(window.location.href, "_blank");
+  }
+
+  async function handleSave() {
+    const title = window.prompt("Title for this saved notebook:", "Untitled");
+    if (title === null) return;
+    setSaveStatus("Saving…");
+    try {
+      await saveGraphFn({ data: { title, kind: "notebook", state: getCurrentNotebookState(graph, blocks) } });
+      setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
+    } catch (e) {
+      setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Mirrors GraphCanvasMulti's own writeUrl/subscribeAll pattern, plus a
+  // second trigger on `blocks` itself (see this component's doc comment for
+  // why: block add/remove/reorder/text-edit is plain React state, not a
+  // graph mutation `subscribeAll` would ever see).
+  useEffect(() => {
+    function writeUrl() {
+      window.history.replaceState(null, "", `#${encodeNotebookState(getCurrentNotebookState(graph, blocks))}`);
+    }
+    writeUrl();
+    return graph.subscribeAll(writeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, blocks]);
 
   function addTextBlock() {
     setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "text", content: "" }]);
@@ -152,7 +256,14 @@ export function NotebookPanel() {
         <button type="button" onClick={addValueBlock}>
           + Value block
         </button>
+        <button type="button" onClick={forkView} title="Open this exact document in a new tab to explore an alternate path">
+          Fork this view
+        </button>
+        <button type="button" onClick={handleSave}>
+          Save to gallery
+        </button>
       </div>
+      {saveStatus && <p style={{ fontSize: "0.85rem", color: "#5b6b8c" }}>{saveStatus}</p>}
     </div>
   );
 }

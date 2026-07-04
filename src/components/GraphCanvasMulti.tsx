@@ -163,7 +163,7 @@ export function GraphCanvasMulti() {
     if (title === null) return;
     setSaveStatus("Saving…");
     try {
-      await saveGraphFn({ data: { title, state: getCurrentMultiGraphState(graph) } });
+      await saveGraphFn({ data: { title, kind: "multi", state: getCurrentMultiGraphState(graph) } });
       setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
     } catch (e) {
       setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
