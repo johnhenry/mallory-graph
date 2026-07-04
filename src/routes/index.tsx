@@ -33,6 +33,9 @@ function HomePage() {
         <Link to="/ode">Differential equations →</Link>
       </p>
       <p>
+        <Link to="/ode-system">System of differential equations →</Link>
+      </p>
+      <p>
         <Link to="/implicit">Implicit relations →</Link>
       </p>
       <p>

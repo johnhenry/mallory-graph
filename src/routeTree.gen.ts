@@ -14,6 +14,7 @@ import { Route as Surface3dRouteImport } from './routes/surface-3d'
 import { Route as StatisticsRouteImport } from './routes/statistics'
 import { Route as RegressionRouteImport } from './routes/regression'
 import { Route as ParametricRouteImport } from './routes/parametric'
+import { Route as OdeSystemRouteImport } from './routes/ode-system'
 import { Route as OdeRouteImport } from './routes/ode'
 import { Route as NotebookRouteImport } from './routes/notebook'
 import { Route as MultiRouteImport } from './routes/multi'
@@ -46,6 +47,11 @@ const RegressionRoute = RegressionRouteImport.update({
 const ParametricRoute = ParametricRouteImport.update({
   id: '/parametric',
   path: '/parametric',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OdeSystemRoute = OdeSystemRouteImport.update({
+  id: '/ode-system',
+  path: '/ode-system',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OdeRoute = OdeRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/multi': typeof MultiRoute
   '/notebook': typeof NotebookRoute
   '/ode': typeof OdeRoute
+  '/ode-system': typeof OdeSystemRoute
   '/parametric': typeof ParametricRoute
   '/regression': typeof RegressionRoute
   '/statistics': typeof StatisticsRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/multi': typeof MultiRoute
   '/notebook': typeof NotebookRoute
   '/ode': typeof OdeRoute
+  '/ode-system': typeof OdeSystemRoute
   '/parametric': typeof ParametricRoute
   '/regression': typeof RegressionRoute
   '/statistics': typeof StatisticsRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/multi': typeof MultiRoute
   '/notebook': typeof NotebookRoute
   '/ode': typeof OdeRoute
+  '/ode-system': typeof OdeSystemRoute
   '/parametric': typeof ParametricRoute
   '/regression': typeof RegressionRoute
   '/statistics': typeof StatisticsRoute
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/multi'
     | '/notebook'
     | '/ode'
+    | '/ode-system'
     | '/parametric'
     | '/regression'
     | '/statistics'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/multi'
     | '/notebook'
     | '/ode'
+    | '/ode-system'
     | '/parametric'
     | '/regression'
     | '/statistics'
@@ -176,6 +187,7 @@ export interface FileRouteTypes {
     | '/multi'
     | '/notebook'
     | '/ode'
+    | '/ode-system'
     | '/parametric'
     | '/regression'
     | '/statistics'
@@ -192,6 +204,7 @@ export interface RootRouteChildren {
   MultiRoute: typeof MultiRoute
   NotebookRoute: typeof NotebookRoute
   OdeRoute: typeof OdeRoute
+  OdeSystemRoute: typeof OdeSystemRoute
   ParametricRoute: typeof ParametricRoute
   RegressionRoute: typeof RegressionRoute
   StatisticsRoute: typeof StatisticsRoute
@@ -234,6 +247,13 @@ declare module '@tanstack/react-router' {
       path: '/parametric'
       fullPath: '/parametric'
       preLoaderRoute: typeof ParametricRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ode-system': {
+      id: '/ode-system'
+      path: '/ode-system'
+      fullPath: '/ode-system'
+      preLoaderRoute: typeof OdeSystemRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ode': {
@@ -304,6 +324,7 @@ const rootRouteChildren: RootRouteChildren = {
   MultiRoute: MultiRoute,
   NotebookRoute: NotebookRoute,
   OdeRoute: OdeRoute,
+  OdeSystemRoute: OdeSystemRoute,
   ParametricRoute: ParametricRoute,
   RegressionRoute: RegressionRoute,
   StatisticsRoute: StatisticsRoute,

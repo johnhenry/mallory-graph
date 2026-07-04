@@ -189,6 +189,55 @@ export function drawSlopeField(
   ctx.restore();
 }
 
+/**
+ * Draw a grid of direction arrows for a 2D vector field (dx, dy) at each
+ * (x, y) -- the phase-portrait analogue of `drawSlopeField`. Unlike a slope
+ * field's undirected segments, a coupled system's flow has a genuine
+ * forward direction, so each arrow gets a small arrowhead. Normalized to a
+ * fixed pixel length regardless of magnitude (direction carries the
+ * information here, not speed), matching `drawSlopeField`'s convention.
+ */
+export function drawVectorField(
+  ctx: CanvasRenderingContext2D,
+  points: Array<{ x: number; y: number; dx: number; dy: number }>,
+  viewport: Viewport,
+  width: number,
+  height: number,
+  halfLengthPx = 8,
+  color = "rgba(37, 99, 235, 0.55)",
+): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1.5;
+  for (const { x, y, dx, dy } of points) {
+    const mag = Math.hypot(dx, dy);
+    if (mag < 1e-12) continue;
+    const sx = toScreenX(x, viewport, width);
+    const sy = toScreenY(y, viewport, height);
+    // Screen-space y is flipped vs. data-space y.
+    const ux = dx / mag;
+    const uy = -dy / mag;
+    const tipX = sx + ux * halfLengthPx;
+    const tipY = sy + uy * halfLengthPx;
+    const tailX = sx - ux * halfLengthPx;
+    const tailY = sy - uy * halfLengthPx;
+    ctx.beginPath();
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    const arrowAngle = Math.atan2(tipY - tailY, tipX - tailX);
+    const headLen = halfLengthPx * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - headLen * Math.cos(arrowAngle - Math.PI / 6), tipY - headLen * Math.sin(arrowAngle - Math.PI / 6));
+    ctx.lineTo(tipX - headLen * Math.cos(arrowAngle + Math.PI / 6), tipY - headLen * Math.sin(arrowAngle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 /** Draw a set of discrete data-space points as a scatter (used for finite-structure plots, e.g. GF(7)). */
 export function drawScatter(
   ctx: CanvasRenderingContext2D,

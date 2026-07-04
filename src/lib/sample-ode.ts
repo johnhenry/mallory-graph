@@ -8,6 +8,27 @@ export interface SlopeFieldPoint {
   slope: number;
 }
 
+export interface OdeSystemSpec {
+  /** State variable names, in Numerical.rk4's y-vector order, e.g. ["x", "y"]. */
+  stateVars: [string, string];
+  /** Independent variable name (usually "t"), available in both derivative expressions. */
+  independentVar: string;
+  /** One derivative expression per state var, e.g. [dx/dt, dy/dt]; each may reference stateVars + independentVar. */
+  derivatives: [string, string];
+}
+
+export interface OdeTrajectoryPoint {
+  t: number;
+  state: [number, number];
+}
+
+export interface VectorFieldPoint {
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+}
+
 const SOLUTION_COLOR = 0x16a34a; // distinct from the curve/area blue, so a solution overlaid on a plotted f(x,y)=0 relation reads as a separate object
 
 /**
@@ -68,6 +89,116 @@ export function sampleOdeSolution(
   }
   const segments = runs.map((run) => GraphUtils.vectorToCurve(Vector.fromArray(run.map((p) => Vector.fromArray(p))), 2, SOLUTION_COLOR));
   return { stroke: (segments[0] as Path2D).stroke, commands: segments.flatMap((s) => s.commands) };
+}
+
+function compileSystem(spec: OdeSystemSpec): (t: number, a: number, b: number) => [number, number] {
+  const compiledA = Symbolic.compile(Symbolic.parse(preprocessImplicitMultiplication(spec.derivatives[0])));
+  const compiledB = Symbolic.compile(Symbolic.parse(preprocessImplicitMultiplication(spec.derivatives[1])));
+  const [nameA, nameB] = spec.stateVars;
+  return (t, a, b) => {
+    const env: Record<string, number> = { [spec.independentVar]: t, [nameA]: a, [nameB]: b };
+    return [compiledA(env), compiledB(env)];
+  };
+}
+
+/**
+ * Numerically integrates a coupled 2-variable first-order ODE system
+ * dstate/dt = f(t, state) from `initial.t0` across `tDomain`, forward and
+ * (via the same s=-t substitution as sampleOdeSolution) backward. This
+ * leans entirely on `Numerical.rk4` already being a *system* solver -- it
+ * takes an arbitrary-length `number[]` state, not just a scalar -- so the
+ * only new work here is the two-derivative-expressions-over-a-named-
+ * state-vector glue, mirroring sampleOdeSolution's single-equation version.
+ *
+ * Unlike sampleOdeSolution, the seed point (t0, state0) is stripped from
+ * each direction's run and spliced back in exactly once between them,
+ * rather than relying on one run or the other to still contain it -- that
+ * avoids a subtly asymmetric edge case where a degenerate one-sided domain
+ * (`tDomain.max` equal to `t0`) would otherwise drop the seed entirely.
+ */
+export function sampleOdeSystem2D(
+  spec: OdeSystemSpec,
+  initial: { t0: number; state0: [number, number] },
+  tDomain: Domain,
+  steps = 400,
+): OdeTrajectoryPoint[] {
+  const f = compileSystem(spec);
+  const { t0, state0 } = initial;
+
+  function collectRun(target: number): OdeTrajectoryPoint[] {
+    const run: OdeTrajectoryPoint[] = [];
+    if (Math.abs(target - t0) < 1e-12) return run;
+    const forward = target > t0;
+    const h = Math.abs(target - t0) / steps;
+    const odeFn = forward
+      ? (tt: number, ys: number[]): number[] => f(tt, ys[0] as number, ys[1] as number)
+      : (s: number, ys: number[]): number[] => {
+          const [da, db] = f(-s, ys[0] as number, ys[1] as number);
+          return [-da, -db];
+        };
+    const tStart = forward ? t0 : -t0;
+    const tEnd = forward ? target : -target;
+    let seeded = false;
+    for (const step of Numerical.rk4(odeFn, [state0[0], state0[1]], tStart, tEnd, h)) {
+      if (!seeded) {
+        seeded = true; // rk4 always emits the initial condition as its first step -- dropped here, spliced back once by the caller
+        continue;
+      }
+      const t = forward ? step.t : -step.t;
+      const a = step.y[0] as number;
+      const b = step.y[1] as number;
+      if (!Number.isFinite(a) || !Number.isFinite(b)) break;
+      run.push({ t, state: [a, b] });
+    }
+    return run;
+  }
+
+  const backwardRun = collectRun(tDomain.min).reverse();
+  const forwardRun = collectRun(tDomain.max);
+  return [...backwardRun, { t: t0, state: [state0[0], state0[1]] }, ...forwardRun];
+}
+
+/**
+ * Converts a trajectory into a phase-plane Path2D (state[0] on the x axis,
+ * state[1] on the y axis, `t` dropped) for rendering via `drawPath` -- the
+ * 2D-system analogue of sampleOdeSolution returning a Path2D directly.
+ * `sampleOdeSystem2D` always includes at least the seed point, so `trajectory`
+ * is never empty in practice here.
+ */
+export function odeSystemTrajectoryToPhasePath(trajectory: OdeTrajectoryPoint[], color = SOLUTION_COLOR): Path2D {
+  return GraphUtils.vectorToCurve(
+    Vector.fromArray(trajectory.map((p) => Vector.fromArray(p.state))),
+    2,
+    color,
+  );
+}
+
+/**
+ * Samples the 2D direction field dstate/dt = f(t, state) over an
+ * `xDomain`×`yDomain` grid at a fixed `t` -- the phase-portrait analogue of
+ * sampleSlopeField, except a genuine vector (dx, dy) rather than one scalar
+ * slope, since a coupled system's flow direction isn't representable as a
+ * single number the way dy/dx is. Points where the field isn't finite are
+ * omitted, same convention as sampleSlopeField.
+ */
+export function sampleVectorField2D(
+  spec: OdeSystemSpec,
+  xDomain: Domain,
+  yDomain: Domain,
+  t = 0,
+  gridDensity = 15,
+): VectorFieldPoint[] {
+  const f = compileSystem(spec);
+  const points: VectorFieldPoint[] = [];
+  for (let i = 0; i < gridDensity; i++) {
+    const x = xDomain.min + (i / (gridDensity - 1)) * (xDomain.max - xDomain.min);
+    for (let j = 0; j < gridDensity; j++) {
+      const y = yDomain.min + (j / (gridDensity - 1)) * (yDomain.max - yDomain.min);
+      const [dx, dy] = f(t, x, y);
+      if (Number.isFinite(dx) && Number.isFinite(dy)) points.push({ x, y, dx, dy });
+    }
+  }
+  return points;
 }
 
 /**

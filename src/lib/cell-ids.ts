@@ -113,6 +113,33 @@ export function cellIdsOde(cellId: string) {
   };
 }
 
+/**
+ * Cell-id namespacing for the coupled-ODE-system/phase-portrait panel
+ * (OdeSystemPanel.tsx) -- a fixed 2-equation/2-variable system (dx/dt,
+ * dy/dt) plus an initial condition, a t-domain, and a phase-plane viewport.
+ * Fixed at 2 equations/2 variables for v1, the same scope cut
+ * SystemSolverPanel (its algebraic-system counterpart) already made.
+ */
+export function cellIdsOdeSystem(cellId: string) {
+  return {
+    exprX: `odeSysExprX:${cellId}`,
+    exprY: `odeSysExprY:${cellId}`,
+    t0: `odeSysT0:${cellId}`,
+    x0: `odeSysX0:${cellId}`,
+    y0: `odeSysY0:${cellId}`,
+    tMin: `odeSysTMin:${cellId}`,
+    tMax: `odeSysTMax:${cellId}`,
+    xMin: `odeSysXMin:${cellId}`,
+    xMax: `odeSysXMax:${cellId}`,
+    yMin: `odeSysYMin:${cellId}`,
+    yMax: `odeSysYMax:${cellId}`,
+    trajectory: `odeSysTrajectory:${cellId}`,
+    vectorField: `odeSysVectorField:${cellId}`,
+  };
+}
+
+export type CellIdsOdeSystem = ReturnType<typeof cellIdsOdeSystem>;
+
 export type CellIdsOde = ReturnType<typeof cellIdsOde>;
 
 // Deliberately NOT namespaced by cellId, same reasoning as TIME_CELL: every
