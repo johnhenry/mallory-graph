@@ -1,6 +1,6 @@
 {
   "name": "mallory-graph",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "An interactive graphing calculator built on mallory-math.",
   "private": true,
   "type": "module",
