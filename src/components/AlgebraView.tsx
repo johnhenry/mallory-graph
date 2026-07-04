@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
-import type { CellGraph } from "../lib/cell-graph.ts";
+import { useCallback, useRef, useSyncExternalStore } from "react";
+import { structuralEqual, type CellGraph } from "../lib/cell-graph.ts";
 
 function formatValue(value: unknown): string {
   if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(4).replace(/\.?0+$/, "") : String(value);
@@ -27,10 +27,28 @@ function formatValue(value: unknown): string {
  * appears) as much as any individual value does.
  */
 export function AlgebraView({ graph, showAuxiliary = false }: { graph: CellGraph; showAuxiliary?: boolean }) {
+  // `graph.list()` allocates a brand-new array + objects on every call, with
+  // no caching of its own -- passed directly as getSnapshot, that's exactly
+  // the anti-pattern useSyncExternalStore warns against: React calls
+  // getSnapshot repeatedly (including just to check "did anything actually
+  // change"), and a snapshot that's never reference-equal to itself makes it
+  // look like the store changes on every single check, which can spiral into
+  // React's "Maximum update depth exceeded" (error #185). Caching the last
+  // snapshot and only replacing it when the *contents* actually differ
+  // (structuralEqual, the same check CellGraph itself uses to decide whether
+  // a recompute changed anything) gives getSnapshot a stable reference to
+  // return between real changes.
+  const lastSnapshot = useRef<ReturnType<CellGraph["list"]>>([]);
+  const getSnapshot = useCallback(() => {
+    const next = graph.list();
+    if (!structuralEqual(next, lastSnapshot.current)) lastSnapshot.current = next;
+    return lastSnapshot.current;
+  }, [graph]);
+
   const entries = useSyncExternalStore(
-    (onChange) => graph.subscribeAll(onChange),
-    () => graph.list(),
-    () => graph.list(),
+    useCallback((onChange) => graph.subscribeAll(onChange), [graph]),
+    getSnapshot,
+    getSnapshot,
   );
 
   const visible = entries
