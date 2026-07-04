@@ -15,6 +15,7 @@ import { drawFilledArea, drawPath, drawPoint, drawRegionMask, drawScatter, type 
 import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
 import { interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/timeline.ts";
+import { AlgebraView } from "./AlgebraView.tsx";
 import { TexSpan } from "./TexSpan.tsx";
 import { useCell } from "../lib/use-cell.ts";
 import { toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
@@ -69,7 +70,7 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
     const graph = externalGraph ?? new CellGraph();
     const ids = cellIds(cellId);
 
-    if (!graph.has(TIME_CELL)) graph.set(TIME_CELL, 0);
+    if (!graph.has(TIME_CELL)) graph.set(TIME_CELL, 0, { auxiliary: true });
 
     if (!graph.has(ids.expr)) {
       graph.set(ids.expr, source);
@@ -81,40 +82,52 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
       // different component" guard, which silently drops the resulting
       // update. Newly-discovered free variables get their slider cell seeded
       // by a `useEffect` in GraphCanvas instead (see below).
-      graph.define(ids.freeVars, () => {
-        let names: string[] = [];
-        try {
-          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
-          names = collectFreeVars(expr, AXIS_VARIABLE);
-        } catch {
-          // Leave `names` empty on a mid-typing parse error; sliders just don't update.
-        }
-        return names;
-      });
+      graph.define(
+        ids.freeVars,
+        () => {
+          let names: string[] = [];
+          try {
+            const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+            names = collectFreeVars(expr, AXIS_VARIABLE);
+          } catch {
+            // Leave `names` empty on a mid-typing parse error; sliders just don't update.
+          }
+          return names;
+        },
+        { auxiliary: true },
+      );
 
-      graph.define(ids.params, () => {
-        const names = graph.get<string[]>(ids.freeVars);
-        const params: Record<string, number> = {};
-        for (const name of names) params[name] = graph.get<number>(ids.param(name));
-        return params;
-      });
+      graph.define(
+        ids.params,
+        () => {
+          const names = graph.get<string[]>(ids.freeVars);
+          const params: Record<string, number> = {};
+          for (const name of names) params[name] = graph.get<number>(ids.param(name));
+          return params;
+        },
+        { auxiliary: true },
+      );
 
       let lastGoodPath: Path2D | null = null;
-      graph.define(ids.path, () => {
-        try {
-          const params = graph.get<Record<string, number>>(ids.params);
-          lastGoodPath = sampleExpr(
-            graph.get<string>(ids.expr),
-            { min: viewport.xMin, max: viewport.xMax },
-            RESOLUTION,
-            AXIS_VARIABLE,
-            params,
-          );
-        } catch {
-          if (!lastGoodPath) throw new Error(`Initial expression "${source}" failed to parse`);
-        }
-        return lastGoodPath;
-      });
+      graph.define(
+        ids.path,
+        () => {
+          try {
+            const params = graph.get<Record<string, number>>(ids.params);
+            lastGoodPath = sampleExpr(
+              graph.get<string>(ids.expr),
+              { min: viewport.xMin, max: viewport.xMax },
+              RESOLUTION,
+              AXIS_VARIABLE,
+              params,
+            );
+          } catch {
+            if (!lastGoodPath) throw new Error(`Initial expression "${source}" failed to parse`);
+          }
+          return lastGoodPath;
+        },
+        { auxiliary: true },
+      );
 
       // 1D inequality shading: only populated when the top-level parsed
       // expression is a `cmp` node (e.g. "sin(x) < cos(x)"), so nothing
@@ -124,106 +137,130 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
       // try/catch (Symbolic.evaluateExact/differentiateSteps just don't
       // apply usefully to a bare comparison) -- no new scaffolding needed
       // there.
-      graph.define(ids.regionMask, (): boolean[] | null => {
-        try {
-          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
-          const params = graph.get<Record<string, number>>(ids.params);
-          return sampleRegionMask(expr, { min: viewport.xMin, max: viewport.xMax }, RESOLUTION, AXIS_VARIABLE, params);
-        } catch {
-          return null;
-        }
-      });
+      graph.define(
+        ids.regionMask,
+        (): boolean[] | null => {
+          try {
+            const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+            const params = graph.get<Record<string, number>>(ids.params);
+            return sampleRegionMask(expr, { min: viewport.xMin, max: viewport.xMax }, RESOLUTION, AXIS_VARIABLE, params);
+          } catch {
+            return null;
+          }
+        },
+        { auxiliary: true },
+      );
 
-      graph.set(ids.pointX, (viewport.xMin + viewport.xMax) / 2);
+      graph.set(ids.pointX, (viewport.xMin + viewport.xMax) / 2, { auxiliary: true });
 
       // A handle dragged along the curve: x follows the pointer, y is
       // re-derived from the current expression/params, so it stays
       // curve-constrained through any edit or slider drag.
       let lastGoodPoint: CurvePoint | null = null;
-      graph.define(ids.point, () => {
-        try {
-          const x = graph.get<number>(ids.pointX);
-          const params = graph.get<Record<string, number>>(ids.params);
-          const compiled = Symbolic.compile(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
-          lastGoodPoint = { x, y: compiled({ ...params, [AXIS_VARIABLE]: x }) };
-        } catch {
-          // Leave the handle at its last good position on a mid-typing parse error.
-        }
-        return lastGoodPoint;
-      });
+      graph.define(
+        ids.point,
+        () => {
+          try {
+            const x = graph.get<number>(ids.pointX);
+            const params = graph.get<Record<string, number>>(ids.params);
+            const compiled = Symbolic.compile(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+            lastGoodPoint = { x, y: compiled({ ...params, [AXIS_VARIABLE]: x }) };
+          } catch {
+            // Leave the handle at its last good position on a mid-typing parse error.
+          }
+          return lastGoodPoint;
+        },
+        { auxiliary: true },
+      );
 
       // Exact-mode readout: re-evaluates the current handle position over
       // Rational arithmetic instead of floats. Returns null (not "0.333...")
       // whenever the expression isn't exactly representable — a `func` node or
       // a non-integer `pow` exponent — so callers fall back to the float value.
-      graph.define(ids.exact, () => {
-        try {
-          const x = graph.get<number>(ids.pointX);
-          const params = graph.get<Record<string, number>>(ids.params);
-          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
-          const env: Record<string, Rational> = { [AXIS_VARIABLE]: Rational.fromNumber(x) };
-          for (const [name, value] of Object.entries(params)) env[name] = Rational.fromNumber(value);
-          return Symbolic.evaluateExact(expr, env).toString();
-        } catch {
-          return null;
-        }
-      });
+      graph.define(
+        ids.exact,
+        () => {
+          try {
+            const x = graph.get<number>(ids.pointX);
+            const params = graph.get<Record<string, number>>(ids.params);
+            const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+            const env: Record<string, Rational> = { [AXIS_VARIABLE]: Rational.fromNumber(x) };
+            for (const [name, value] of Object.entries(params)) env[name] = Rational.fromNumber(value);
+            return Symbolic.evaluateExact(expr, env).toString();
+          } catch {
+            return null;
+          }
+        },
+        { auxiliary: true },
+      );
 
       // "Show steps" accordion: derivative of the current expression w.r.t. the
       // axis variable, plus a bottom-up trace of every rule applied.
-      graph.define(ids.derivative, (): Derivative | null => {
-        try {
-          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
-          return Symbolic.differentiateSteps(expr, AXIS_VARIABLE);
-        } catch {
-          return null;
-        }
-      });
+      graph.define(
+        ids.derivative,
+        (): Derivative | null => {
+          try {
+            const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+            return Symbolic.differentiateSteps(expr, AXIS_VARIABLE);
+          } catch {
+            return null;
+          }
+        },
+        { auxiliary: true },
+      );
 
       // Area-under-curve: bounds are plain fixed numeric inputs, not the
       // auto-inferred-slider mechanism -- they aren't symbols discovered in
       // the expression, they're independent numeric knobs, so repurposing
       // the free-var/slider machinery would pollute that abstraction.
-      graph.set(ids.areaLower, viewport.xMin);
-      graph.set(ids.areaUpper, (viewport.xMin + viewport.xMax) / 2);
+      graph.set(ids.areaLower, viewport.xMin, { auxiliary: true });
+      graph.set(ids.areaUpper, (viewport.xMin + viewport.xMax) / 2, { auxiliary: true });
 
       let lastGoodArea: AreaResult | null = null;
-      graph.define(ids.area, (): AreaResult | null => {
-        try {
-          const lower = graph.get<number>(ids.areaLower);
-          const upper = graph.get<number>(ids.areaUpper);
-          const params = graph.get<Record<string, number>>(ids.params);
-          const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
-          const value = Symbolic.integrateDefinite(expr, lower, upper, AXIS_VARIABLE, params);
-          const path = sampleExpr(
-            expr,
-            { min: Math.min(lower, upper), max: Math.max(lower, upper) },
-            RESOLUTION,
-            AXIS_VARIABLE,
-            params,
-          );
-          lastGoodArea = { value, path };
-        } catch {
-          // Leave the last good area/shading on a mid-typing parse error, or
-          // an out-of-domain bound (e.g. integrating straight through an asymptote).
-        }
-        return lastGoodArea;
-      });
+      graph.define(
+        ids.area,
+        (): AreaResult | null => {
+          try {
+            const lower = graph.get<number>(ids.areaLower);
+            const upper = graph.get<number>(ids.areaUpper);
+            const params = graph.get<Record<string, number>>(ids.params);
+            const expr = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+            const value = Symbolic.integrateDefinite(expr, lower, upper, AXIS_VARIABLE, params);
+            const path = sampleExpr(
+              expr,
+              { min: Math.min(lower, upper), max: Math.max(lower, upper) },
+              RESOLUTION,
+              AXIS_VARIABLE,
+              params,
+            );
+            lastGoodArea = { value, path };
+          } catch {
+            // Leave the last good area/shading on a mid-typing parse error, or
+            // an out-of-domain bound (e.g. integrating straight through an asymptote).
+          }
+          return lastGoodArea;
+        },
+        { auxiliary: true },
+      );
 
-      graph.set(ids.structure, null as number | null);
+      graph.set(ids.structure, null as number | null, { auxiliary: true });
 
       // Structure selector: when set to a modulus, plots a finite scatter (all
       // elements of Z/nZ) instead of the continuous sampled path.
-      graph.define(ids.scatter, () => {
-        const modulus = graph.get<number | null>(ids.structure);
-        if (modulus === null) return null;
-        try {
-          const params = graph.get<Record<string, number>>(ids.params);
-          return sampleStructureExpr(graph.get<string>(ids.expr), integersModuloStructure(modulus), AXIS_VARIABLE, params);
-        } catch {
-          return [];
-        }
-      });
+      graph.define(
+        ids.scatter,
+        () => {
+          const modulus = graph.get<number | null>(ids.structure);
+          if (modulus === null) return null;
+          try {
+            const params = graph.get<Record<string, number>>(ids.params);
+            return sampleStructureExpr(graph.get<string>(ids.expr), integersModuloStructure(modulus), AXIS_VARIABLE, params);
+          } catch {
+            return [];
+          }
+        },
+        { auxiliary: true },
+      );
 
       // Parameter timeline: a param's value cell is either a plain `set` cell
       // (static, dragged manually) or, once SliderControl enables a keyframe
@@ -232,10 +269,14 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
       // mechanism that powers sliders and direct manipulation elsewhere in
       // this graph, and what lets multiple panes stay in lockstep off one
       // clock (see LinkedGraphPanes.tsx).
-      graph.define(ids.timelineDuration, () => {
-        const names = graph.get<string[]>(ids.freeVars);
-        return timelineDuration(names.map((name) => graph.get<Keyframe[] | undefined>(ids.track(name))));
-      });
+      graph.define(
+        ids.timelineDuration,
+        () => {
+          const names = graph.get<string[]>(ids.freeVars);
+          return timelineDuration(names.map((name) => graph.get<Keyframe[] | undefined>(ids.track(name))));
+        },
+        { auxiliary: true },
+      );
     }
 
     ref.current = graph;
@@ -526,6 +567,9 @@ export function GraphCanvas({
           style={{ font: "inherit", width: "20ch" }}
         />
       </label>
+      <div style={{ margin: "0.5rem 0" }}>
+        <AlgebraView graph={graph} />
+      </div>
       {freeVars.length > 0 && (
         <div style={{ display: "flex", gap: "1rem", margin: "0.5rem 0" }}>
           {freeVars.map((name) => (

@@ -114,3 +114,49 @@ test("delete detaches a cell from its dependents and dependencies", () => {
   g.define("b", () => g.get<number>("a") + 1);
   assert.equal(g.get("b"), 101);
 });
+
+test("role reports free for a set cell, dependent for a define cell, unknown before any value exists", () => {
+  const g = new CellGraph();
+  assert.equal(g.role("never-touched"), "unknown");
+  g.set("a", 1);
+  assert.equal(g.role("a"), "free");
+  g.define("b", () => g.get<number>("a") + 1);
+  assert.equal(g.role("b"), "unknown"); // defined but not yet read/recomputed
+  g.get("b");
+  assert.equal(g.role("b"), "dependent");
+});
+
+test("role updates when a cell transitions between set and define", () => {
+  const g = new CellGraph();
+  g.set("a", 1);
+  assert.equal(g.role("a"), "free");
+  g.define("a", () => 2);
+  g.get("a");
+  assert.equal(g.role("a"), "dependent");
+  g.set("a", 3);
+  assert.equal(g.role("a"), "free");
+});
+
+test("isAuxiliary defaults to false, and is set/preserved per the set/define auxiliary option", () => {
+  const g = new CellGraph();
+  g.set("a", 1);
+  assert.equal(g.isAuxiliary("a"), false);
+  g.set("hidden", 1, { auxiliary: true });
+  assert.equal(g.isAuxiliary("hidden"), true);
+  // A later set() on the same still-free cell without an explicit option
+  // leaves the previously-set auxiliary flag alone rather than resetting it.
+  g.set("hidden", 2);
+  assert.equal(g.isAuxiliary("hidden"), true);
+});
+
+test("list enumerates every cell with its role and auxiliary flag", () => {
+  const g = new CellGraph();
+  g.set("a", 1);
+  g.set("hidden", 2, { auxiliary: true });
+  g.define("b", () => g.get<number>("a") + 1);
+  g.get("b");
+  const entries = new Map(g.list().map((e) => [e.id, e]));
+  assert.deepEqual(entries.get("a"), { id: "a", role: "free", auxiliary: false, hasValue: true });
+  assert.deepEqual(entries.get("hidden"), { id: "hidden", role: "free", auxiliary: true, hasValue: true });
+  assert.deepEqual(entries.get("b"), { id: "b", role: "dependent", auxiliary: false, hasValue: true });
+});

@@ -24,7 +24,10 @@ interface CellRecord<T = unknown> {
   compute?: ComputeFn<T>;
   dependencies: Set<string>;
   dependents: Set<string>;
+  auxiliary: boolean;
 }
+
+export type CellRole = "free" | "dependent" | "unknown";
 
 export class CircularDependencyError extends Error {
   constructor(path: string[]) {
@@ -41,10 +44,24 @@ export class CellGraph {
   private emitting = new Set<string>();
   private notifyingGlobal = false;
 
-  /** Write a raw source-of-truth value (e.g. a slider drag or text input). */
-  set<T>(id: string, value: T): void {
+  /**
+   * Write a raw source-of-truth value (e.g. a slider drag or text input).
+   * Structurally, a cell written via `set` (no `compute` fn) is what makes
+   * it "free" -- see {@link role}.
+   *
+   * @param options.auxiliary Marks this cell hidden-by-default in an
+   * Algebra-view-style listing (see {@link list}) -- e.g. an internal
+   * sampling parameter that isn't itself meaningful to show the user,
+   * distinct from a top-level named object. Only applied when the cell
+   * doesn't already exist, or is transitioning from a compute-backed
+   * (dependent) cell to a free one; an existing free cell's auxiliary flag
+   * is left as originally set.
+   */
+  set<T>(id: string, value: T, options?: { auxiliary?: boolean }): void {
     const cell = this.ensure<T>(id);
+    const wasCompute = cell.compute !== undefined;
     cell.compute = undefined;
+    if (options?.auxiliary !== undefined && (wasCompute || !cell.hasValue)) cell.auxiliary = options.auxiliary;
     const unchanged = cell.hasValue && structuralEqual(cell.value, value);
     cell.dirty = false;
     if (unchanged) return;
@@ -57,14 +74,57 @@ export class CellGraph {
     this.propagateDirty(id);
   }
 
-  /** Define (or redefine) a derived cell computed from other cells. */
-  define<T>(id: string, compute: ComputeFn<T>): void {
+  /**
+   * Define (or redefine) a derived cell computed from other cells.
+   * Structurally, a cell written via `define` (has a `compute` fn) is what
+   * makes it "dependent" -- see {@link role}.
+   *
+   * @param options.auxiliary See {@link set}'s equivalent option; applied
+   * the same way (only on first definition, or a transition from free to
+   * dependent).
+   */
+  define<T>(id: string, compute: ComputeFn<T>, options?: { auxiliary?: boolean }): void {
     const cell = this.ensure<T>(id);
+    const wasFree = cell.compute === undefined && cell.hasValue;
+    if (options?.auxiliary !== undefined && (wasFree || cell.compute === undefined)) cell.auxiliary = options.auxiliary;
     cell.compute = compute;
     cell.dirty = true;
     cell.version++;
     this.emit(id);
     this.propagateDirty(id);
+  }
+
+  /**
+   * Whether `id` is "free" (writable directly via `set`, no `compute` fn --
+   * e.g. a slider or text input), "dependent" (computed via `define` from
+   * other cells), or "unknown" (`id` has never been `set`/`define`d, only
+   * read, or doesn't exist at all).
+   */
+  role(id: string): CellRole {
+    const cell = this.cells.get(id);
+    if (!cell || !cell.hasValue) return "unknown";
+    return cell.compute ? "dependent" : "free";
+  }
+
+  /** Whether `id` was marked `auxiliary` (hidden-by-default in an Algebra-view-style listing) -- see {@link set}/{@link define}. */
+  isAuxiliary(id: string): boolean {
+    return this.cells.get(id)?.auxiliary ?? false;
+  }
+
+  /**
+   * Every cell currently in the graph, with its role and auxiliary flag --
+   * the basis for an Algebra-view-style listing (GeoGebra's free/dependent/
+   * auxiliary object model). Includes cells with no value yet (role
+   * "unknown") since a caller may still want to know such an id exists
+   * (e.g. was read but never written).
+   */
+  list(): Array<{ id: string; role: CellRole; auxiliary: boolean; hasValue: boolean }> {
+    return [...this.cells.entries()].map(([id, cell]) => ({
+      id,
+      role: this.role(id),
+      auxiliary: cell.auxiliary,
+      hasValue: cell.hasValue,
+    }));
   }
 
   /** Read a cell's current value, recomputing if stale. Auto-tracks dependency edges. */
@@ -163,7 +223,15 @@ export class CellGraph {
   private ensure<T>(id: string): CellRecord<T> {
     let cell = this.cells.get(id) as CellRecord<T> | undefined;
     if (!cell) {
-      cell = { value: undefined, hasValue: false, version: 0, dirty: true, dependencies: new Set(), dependents: new Set() };
+      cell = {
+        value: undefined,
+        hasValue: false,
+        version: 0,
+        dirty: true,
+        dependencies: new Set(),
+        dependents: new Set(),
+        auxiliary: false,
+      };
       this.cells.set(id, cell);
     }
     return cell;
