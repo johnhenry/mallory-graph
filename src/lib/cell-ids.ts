@@ -224,12 +224,16 @@ export type CellIdsParametric = ReturnType<typeof cellIdsParametric>;
 
 /**
  * Cell-id namespacing for the regression panel (RegressionPanel.tsx) -- one
- * ordered row list (each row a spreadsheet-style {id, x, y}), distinct from
- * every other panel's shape.
+ * ordered row list (each row a spreadsheet-style {id, x, y}), a fit-type
+ * toggle, and (for the nonlinear fit) a model expression plus a map of
+ * per-parameter initial guesses -- distinct from every other panel's shape.
  */
 export function cellIdsRegression(cellId: string) {
   return {
     rows: `regressionRows:${cellId}`,
+    fitType: `regressionFitType:${cellId}`,
+    modelExpr: `regressionModelExpr:${cellId}`,
+    paramGuesses: `regressionParamGuesses:${cellId}`,
     fit: `regressionFit:${cellId}`,
   };
 }

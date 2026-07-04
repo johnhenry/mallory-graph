@@ -10,11 +10,12 @@ function RegressionPage() {
     <div>
       <h1>mallory-graph — regression</h1>
       <details>
-        <summary>Linear regression (least squares) over a spreadsheet-style (x, y) row list.</summary>
+        <summary>Linear or nonlinear regression over a spreadsheet-style (x, y) row list.</summary>
         <p>
-          Via <code>mallory-math</code>'s <code>Statistics.linearRegression</code>/<code>correlation</code> —
-          previously fully implemented upstream but unused anywhere in the UI. v1 is linear only; a nonlinear
-          (Levenberg–Marquardt) fit is a later CAS-side addition.
+          Linear is via <code>mallory-math</code>'s <code>Statistics.linearRegression</code>/<code>correlation</code>.
+          Nonlinear fits any custom model you type (e.g. <code>a*exp(b*x)</code>) via{" "}
+          <code>Numerical.levenbergMarquardt</code> -- a damped Gauss-Newton fit starting from the initial guess
+          shown beside each parameter, with the fitted curve resampled and redrawn over the current view.
         </p>
       </details>
       <p>
