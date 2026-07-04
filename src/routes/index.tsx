@@ -47,6 +47,9 @@ function HomePage() {
       <p>
         <Link to="/gallery">Gallery of saved graphs →</Link>
       </p>
+      <p>
+        <Link to="/notebook">Notebook →</Link>
+      </p>
       <GraphCanvas />
     </div>
   );

@@ -15,6 +15,7 @@ import { Route as StatisticsRouteImport } from './routes/statistics'
 import { Route as RegressionRouteImport } from './routes/regression'
 import { Route as ParametricRouteImport } from './routes/parametric'
 import { Route as OdeRouteImport } from './routes/ode'
+import { Route as NotebookRouteImport } from './routes/notebook'
 import { Route as MultiRouteImport } from './routes/multi'
 import { Route as LinkedRouteImport } from './routes/linked'
 import { Route as ImplicitRouteImport } from './routes/implicit'
@@ -50,6 +51,11 @@ const ParametricRoute = ParametricRouteImport.update({
 const OdeRoute = OdeRouteImport.update({
   id: '/ode',
   path: '/ode',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotebookRoute = NotebookRouteImport.update({
+  id: '/notebook',
+  path: '/notebook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MultiRoute = MultiRouteImport.update({
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
+  '/notebook': typeof NotebookRoute
   '/ode': typeof OdeRoute
   '/parametric': typeof ParametricRoute
   '/regression': typeof RegressionRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
+  '/notebook': typeof NotebookRoute
   '/ode': typeof OdeRoute
   '/parametric': typeof ParametricRoute
   '/regression': typeof RegressionRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
   '/multi': typeof MultiRoute
+  '/notebook': typeof NotebookRoute
   '/ode': typeof OdeRoute
   '/parametric': typeof ParametricRoute
   '/regression': typeof RegressionRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/implicit'
     | '/linked'
     | '/multi'
+    | '/notebook'
     | '/ode'
     | '/parametric'
     | '/regression'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/implicit'
     | '/linked'
     | '/multi'
+    | '/notebook'
     | '/ode'
     | '/parametric'
     | '/regression'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/implicit'
     | '/linked'
     | '/multi'
+    | '/notebook'
     | '/ode'
     | '/parametric'
     | '/regression'
@@ -178,6 +190,7 @@ export interface RootRouteChildren {
   ImplicitRoute: typeof ImplicitRoute
   LinkedRoute: typeof LinkedRoute
   MultiRoute: typeof MultiRoute
+  NotebookRoute: typeof NotebookRoute
   OdeRoute: typeof OdeRoute
   ParametricRoute: typeof ParametricRoute
   RegressionRoute: typeof RegressionRoute
@@ -228,6 +241,13 @@ declare module '@tanstack/react-router' {
       path: '/ode'
       fullPath: '/ode'
       preLoaderRoute: typeof OdeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notebook': {
+      id: '/notebook'
+      path: '/notebook'
+      fullPath: '/notebook'
+      preLoaderRoute: typeof NotebookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/multi': {
@@ -282,6 +302,7 @@ const rootRouteChildren: RootRouteChildren = {
   ImplicitRoute: ImplicitRoute,
   LinkedRoute: LinkedRoute,
   MultiRoute: MultiRoute,
+  NotebookRoute: NotebookRoute,
   OdeRoute: OdeRoute,
   ParametricRoute: ParametricRoute,
   RegressionRoute: RegressionRoute,
