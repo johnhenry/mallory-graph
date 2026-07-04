@@ -30,12 +30,26 @@ export function drawImplicitCurve(
   ctx.restore();
 }
 
-/** Draw a mallory-math Path2D (moveTo/lineTo commands in data space) onto a real Canvas2D context. */
-export function drawPath(ctx: CanvasRenderingContext2D, path: MalloryPath, viewport: Viewport, width: number, height: number): void {
+/**
+ * Draw a mallory-math Path2D (moveTo/lineTo commands in data space) onto a
+ * real Canvas2D context. `dashed` (e.g. for a derivative overlay sharing
+ * its parent curve's color) is the one thing not already carried by the
+ * Path2D's own `stroke` style, since that comes from upstream
+ * `GraphUtils.vectorToCurve` and has no dash concept.
+ */
+export function drawPath(
+  ctx: CanvasRenderingContext2D,
+  path: MalloryPath,
+  viewport: Viewport,
+  width: number,
+  height: number,
+  dashed = false,
+): void {
   ctx.save();
   ctx.strokeStyle = `#${path.stroke.color.toString(16).padStart(6, "0")}`;
   ctx.globalAlpha = path.stroke.alpha;
   ctx.lineWidth = path.stroke.thickness || 1;
+  if (dashed) ctx.setLineDash([6, 4]);
   ctx.beginPath();
   for (const cmd of path.commands) {
     const sx = toScreenX(cmd.x, viewport, width);

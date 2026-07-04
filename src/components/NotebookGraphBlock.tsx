@@ -2,7 +2,7 @@ import type { Path2D } from "mallory-math";
 import { useEffect, useRef } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsMultiRow, EXPRESSION_LIST_CELL, VIEWPORT_CELL } from "../lib/cell-ids.ts";
-import { drawExpressionLayer, type Viewport } from "../lib/render-path.ts";
+import { drawExpressionLayer, drawPath, type Viewport } from "../lib/render-path.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { ExpressionRow } from "./ExpressionRow.tsx";
 
@@ -65,6 +65,10 @@ export function NotebookGraphBlock({ initialSource = "x" }: { initialSource?: st
           const path = graph.get<Path2D>(ids.path);
           const visible = graph.get<boolean>(ids.visible);
           drawExpressionLayer(ctx, path, visible, viewport, WIDTH, HEIGHT);
+          if (visible) {
+            const derivativePath = graph.get<Path2D | null>(ids.derivativePath);
+            if (derivativePath) drawPath(ctx, derivativePath, viewport, WIDTH, HEIGHT, true);
+          }
         } catch {
           // A row whose cells haven't registered yet -- skip this frame.
         }

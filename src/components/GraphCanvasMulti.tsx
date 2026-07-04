@@ -10,7 +10,7 @@ import {
   type MultiGraphAnnotation,
   type MultiGraphState,
 } from "../lib/multi-graph-state.ts";
-import { drawExpressionLayer, drawScatter, type Viewport } from "../lib/render-path.ts";
+import { drawExpressionLayer, drawPath, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { saveGraph } from "../lib/saved-graphs.ts";
 import { findIntersections } from "../lib/sample-function.ts";
 import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY } from "../lib/viewport.ts";
@@ -351,6 +351,8 @@ export function GraphCanvasMulti() {
           if (visible) {
             const roots = graph.get<{ x: number; y: number }[]>(ids.roots);
             if (roots.length > 0) drawScatter(ctx, roots, viewport, WIDTH, HEIGHT, 4, "#142033");
+            const derivativePath = graph.get<Path2D | null>(ids.derivativePath);
+            if (derivativePath) drawPath(ctx, derivativePath, viewport, WIDTH, HEIGHT, true);
           }
         } catch {
           // A row whose cells haven't been registered yet (ExpressionRow

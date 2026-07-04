@@ -157,11 +157,13 @@ export const EXPRESSION_LIST_CELL = "expressionList";
 /**
  * Cell-id namespacing for one row on a shared multi-expression canvas
  * (GraphCanvasMulti.tsx/ExpressionRow.tsx) -- deliberately a smaller set
- * than `cellIds`: v1 covers the curve itself, its color/visibility, and
- * free-variable sliders, but not yet the single-pane `GraphCanvas`'s
- * point-drag/exact-mode/derivative-steps/area/region-shading/finite-
- * structure features, which stay single-expression-only for now (porting
- * each to a multi-curve-aware form is follow-on work, not this pass).
+ * than `cellIds`: v1 covers the curve itself, its color/visibility,
+ * free-variable sliders, and now an optional f' overlay curve (sharing the
+ * row's own color, dashed), but not yet the single-pane `GraphCanvas`'s
+ * point-drag/exact-mode/step-by-step-differentiation-trace/area/region-
+ * shading/finite-structure features, which stay single-expression-only for
+ * now (porting each to a multi-curve-aware form is follow-on work, not this
+ * pass).
  */
 export function cellIdsMultiRow(cellId: string) {
   return {
@@ -177,6 +179,10 @@ export function cellIdsMultiRow(cellId: string) {
     path: `multiPath:${cellId}`,
     error: `multiError:${cellId}`,
     roots: `multiRoots:${cellId}`,
+    /** Whether the f' overlay curve is toggled on for this row. */
+    showDerivative: `multiShowDerivative:${cellId}`,
+    /** The sampled f' curve (same color as `path`, drawn dashed), or null while `showDerivative` is off. Falls back to the last good sample on a mid-typing parse error, like `path` does. */
+    derivativePath: `multiDerivativePath:${cellId}`,
     param: (name: string) => `multiParam:${cellId}:${name}`,
   };
 }

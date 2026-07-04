@@ -46,6 +46,7 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
     ref.current = true;
     if (!graph.hasValue(ids.path)) {
       graph.set(ids.strict, false, { auxiliary: true });
+      graph.set(ids.showDerivative, false, { auxiliary: true });
 
       graph.define(
         ids.freeVars,
@@ -120,6 +121,40 @@ function useRowCells(graph: CellGraph, rowId: string): ReturnType<typeof cellIds
       // crossings -- the flag computation is decoupled from the drawing
       // decision, the Open-MCT-inspired pattern from the research roadmap.
       graph.define(ids.roots, () => findRootCrossings(graph.get(ids.path)), { auxiliary: true });
+
+      // f' as just another sampled curve, reusing the same sampleExprAdaptive
+      // path every row's own f already goes through -- Symbolic.differentiate
+      // is a total, mechanical tree walk over every current Expr variant, so
+      // the only realistic failure mode here is the same mid-typing parse
+      // error `path` already handles, hence the same "keep the last good
+      // sample" fallback convention. Returns null (not computed at all)
+      // while the toggle is off, so leaving it off costs nothing.
+      let lastGoodDerivativePath: ReturnType<typeof sampleExprAdaptive> | null = null;
+      graph.define(
+        ids.derivativePath,
+        () => {
+          if (!graph.get<boolean>(ids.showDerivative)) return null;
+          try {
+            const viewport = graph.get<Viewport>(VIEWPORT_CELL);
+            const params = graph.get<Record<string, number>>(ids.params);
+            const color = graph.get<number>(ids.color);
+            const parsed = Symbolic.parse(preprocessImplicitMultiplication(graph.get<string>(ids.expr)));
+            const derivative = Symbolic.differentiate(parsed, AXIS_VARIABLE);
+            lastGoodDerivativePath = sampleExprAdaptive(
+              derivative,
+              { min: viewport.xMin, max: viewport.xMax },
+              RESOLUTION,
+              AXIS_VARIABLE,
+              params,
+              color,
+            );
+          } catch {
+            // Keep the last good sample on a mid-typing parse error.
+          }
+          return lastGoodDerivativePath;
+        },
+        { auxiliary: true },
+      );
     }
   }
   return ids;
@@ -139,6 +174,7 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
   const visible = useCell<boolean>(graph, ids.visible);
   const freeVars = useCell<string[]>(graph, ids.freeVars);
   const strict = useCell<boolean>(graph, ids.strict);
+  const showDerivative = useCell<boolean>(graph, ids.showDerivative);
   const error = useCell<string | null>(graph, ids.error);
   const [exprInput, setExprInput] = useState(expr);
   const [useMathKeyboard, setUseMathKeyboard] = useState(false);
@@ -224,6 +260,14 @@ export function ExpressionRow({ graph, rowId, onRemove }: ExpressionRowProps) {
         >
           <input type="checkbox" checked={strict} onChange={(e) => graph.set(ids.strict, e.target.checked)} />{" "}
           strict ({AXIS_VARIABLE} only)
+        </label>
+        <label style={{ fontSize: "0.78rem", color: "#5b6b8c" }} title="Overlay this row's derivative (dashed, same color)">
+          <input
+            type="checkbox"
+            checked={showDerivative}
+            onChange={(e) => graph.set(ids.showDerivative, e.target.checked)}
+          />{" "}
+          f'
         </label>
         {freeVars.map((name) => (
           <ParamSlider key={name} graph={graph} paramId={ids.param(name)} name={name} />

@@ -38,9 +38,10 @@ function MultiPage() {
         <summary>Several curves sharing one coordinate system and one canvas, with color, annotations, and sharing.</summary>
         <p>
           Unlike the linked-panes view, which shares a <code>CellGraph</code> but still renders each pane on its own
-          separate canvas. v1 supports plotting and free-variable sliders per row; point-dragging, exact mode,
-          derivative steps, area/region shading, and finite-structure scatter stay single-expression-only for now
-          (see <code>GraphCanvas</code>). Root crossings (where a curve meets y=0) are marked automatically, via a
+          separate canvas. v1 supports plotting, free-variable sliders, and an f' overlay (dashed, same color) per
+          row; point-dragging, exact mode, the step-by-step differentiation trace, area/region shading, and
+          finite-structure scatter stay single-expression-only for now (see <code>GraphCanvas</code>). Root crossings
+          (where a curve meets y=0) are marked automatically, via a
           declarative "condition" cell decoupled from the drawing decision — the Open MCT-inspired pattern the
           roadmap flagged for flagging points of interest generally. Pairwise intersections between every currently
           visible pair of curves are marked the same way, in purple. The full state (every row, its
