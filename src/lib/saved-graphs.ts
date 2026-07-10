@@ -36,19 +36,26 @@ async function dataFilePath(): Promise<string> {
   return path.join(process.cwd(), "data", "saved-graphs.json");
 }
 
+/**
+ * Backward compatibility: a record saved before `kind` existed is implicitly
+ * "multi", the only kind that existed then -- the on-disk shape may
+ * genuinely lack `kind`, unlike `SavedGraphRecord`'s static type. Extracted
+ * as a pure function so this migration logic is unit-testable without
+ * touching the filesystem or `createServerFn`'s server-only wrapper.
+ */
+export function migrateSavedGraphRecord(
+  r: Omit<SavedGraphRecord, "kind"> & { kind?: SavedGraphKind },
+): SavedGraphRecord {
+  return { ...r, kind: r.kind ?? "multi" };
+}
+
 async function readStore(): Promise<SavedGraphRecord[]> {
   const { promises: fs } = await import("node:fs");
   try {
     const raw = await fs.readFile(await dataFilePath(), "utf8");
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Backward compatibility: a record saved before `kind` existed is
-    // implicitly "multi", the only kind that existed then -- the on-disk
-    // shape may genuinely lack `kind`, unlike SavedGraphRecord's static type.
-    return (parsed as Array<Omit<SavedGraphRecord, "kind"> & { kind?: SavedGraphKind }>).map((r) => ({
-      ...r,
-      kind: r.kind ?? "multi",
-    }));
+    return (parsed as Array<Omit<SavedGraphRecord, "kind"> & { kind?: SavedGraphKind }>).map(migrateSavedGraphRecord);
   } catch {
     return [];
   }
