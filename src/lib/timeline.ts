@@ -40,3 +40,13 @@ export function timelineDuration(tracks: Array<Keyframe[] | undefined>): number 
   }
   return maxT;
 }
+
+/**
+ * Seconds of Flash-highlight prelude the video export plays before the
+ * parameter animation when the curve has root crossings (see
+ * export-video.ts's construct). Lives here (client-safe module) rather than
+ * in export-video.ts because TanStack Start strips that module down to RPC
+ * stubs on the client -- a plain const exported from it wouldn't survive --
+ * and the export UI's preview slider needs this to span the full clip.
+ */
+export const HIGHLIGHT_PRELUDE_SECONDS = 0.8;

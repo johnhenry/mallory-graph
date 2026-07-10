@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIds, TIME_CELL, type CellIds } from "../lib/cell-ids.ts";
 import { resolveChatCommand, type ChatCommandContext } from "../lib/chat-commands.ts";
-import { getExportVideoJob, startExportVideoJob } from "../lib/export-video.ts";
+import { getExportVideoJob, renderExportPreviewFrame, startExportVideoJob, type ExportVideoInput } from "../lib/export-video.ts";
 import { exprToLatex } from "../lib/expr-to-latex.ts";
 import { integersModuloStructure } from "../lib/finite-structure.ts";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
@@ -14,7 +14,7 @@ import { resolveNaturalLanguageQuery } from "../lib/nl-query.ts";
 import { drawFilledArea, drawPath, drawPoint, drawRegionMask, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
-import { interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/timeline.ts";
+import { HIGHLIGHT_PRELUDE_SECONDS, interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/timeline.ts";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CopyableTex } from "./CopyableTex.tsx";
 import { TexSpan } from "./TexSpan.tsx";
@@ -371,8 +371,48 @@ export function GraphCanvas({
   const [exportFormat, setExportFormat] = useState<"mp4" | "gif">("mp4");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [previewTime, setPreviewTime] = useState(0);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const startExportVideoJobFn = useServerFn(startExportVideoJob);
   const getExportVideoJobFn = useServerFn(getExportVideoJob);
+  const renderExportPreviewFrameFn = useServerFn(renderExportPreviewFrame);
+
+  /** The export payload, shared by the full render job and the scrub preview so they can't drift apart. */
+  function buildExportInput(): Omit<ExportVideoInput, "format"> {
+    const names = graph.get<string[]>(ids.freeVars);
+    const params: Record<string, number> = {};
+    const tracks: Record<string, Keyframe[] | undefined> = {};
+    for (const name of names) {
+      params[name] = graph.get<number>(ids.param(name));
+      tracks[name] = graph.get<Keyframe[] | undefined>(ids.track(name));
+    }
+    const source = graph.get<string>(ids.expr);
+    // Typeset equation label for the exported clip -- a nicety; a
+    // mid-typing parse failure just omits it.
+    let latex: string | undefined;
+    try {
+      latex = exprToLatex(Symbolic.parse(preprocessImplicitMultiplication(source)));
+    } catch {
+      latex = undefined;
+    }
+    return { source, params, tracks, viewport, duration, latex };
+  }
+
+  // Fetched on slider release (not per drag tick): a frame render is fast
+  // but not free, and a drag emits dozens of ticks.
+  async function fetchPreviewFrame(time: number) {
+    setPreviewLoading(true);
+    setExportError(null);
+    try {
+      const frame = await renderExportPreviewFrameFn({ data: { ...buildExportInput(), format: exportFormat, time } });
+      setPreviewSrc(`data:${frame.mimeType};base64,${frame.data}`);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   // Phase 11b: the render runs as a background job (see export-video.ts)
   // rather than inside one SSR request, so a long or high-res export doesn't
@@ -383,22 +423,8 @@ export function GraphCanvas({
     setExporting(true);
     setExportError(null);
     try {
-      const names = graph.get<string[]>(ids.freeVars);
-      const params: Record<string, number> = {};
-      const tracks: Record<string, Keyframe[] | undefined> = {};
-      for (const name of names) {
-        params[name] = graph.get<number>(ids.param(name));
-        tracks[name] = graph.get<Keyframe[] | undefined>(ids.track(name));
-      }
       const { jobId } = await startExportVideoJobFn({
-        data: {
-          source: graph.get<string>(ids.expr),
-          params,
-          tracks,
-          viewport,
-          duration,
-          format: exportFormat,
-        },
+        data: { ...buildExportInput(), format: exportFormat },
       });
       const job = await new Promise<Awaited<ReturnType<typeof getExportVideoJobFn>>>((resolve, reject) => {
         const poll = () => {
@@ -641,6 +667,40 @@ export function GraphCanvas({
             {exporting ? "Exporting…" : "Export"}
           </button>
           {exportError && <span style={{ color: "crimson" }}>{exportError}</span>}
+        </div>
+      )}
+      {showTransport && duration > 0 && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "0.85rem", color: "#5b6b8c" }}>Export preview</span>
+            {/* Slider spans the full clip: highlight prelude + parameter
+                animation. With no root crossings the prelude doesn't play
+                and times past the animation clamp to the final frame --
+                harmless. Fetch happens on release (pointer up / key up),
+                not per drag tick. */}
+            <input
+              type="range"
+              min={0}
+              max={duration + HIGHLIGHT_PRELUDE_SECONDS}
+              step={0.05}
+              value={previewTime}
+              onChange={(e) => setPreviewTime(Number(e.target.value))}
+              onPointerUp={() => void fetchPreviewFrame(previewTime)}
+              onKeyUp={() => void fetchPreviewFrame(previewTime)}
+            />
+            <span style={{ fontSize: "0.85rem", color: "#5b6b8c" }}>
+              {previewTime.toFixed(2)}s{previewLoading ? " — rendering…" : previewSrc ? "" : " — release to preview"}
+            </span>
+          </label>
+          {previewSrc && (
+            <img
+              src={previewSrc}
+              alt={`Export preview frame at ${previewTime.toFixed(2)}s`}
+              width={160}
+              height={160}
+              style={{ border: "1px solid #ccc", display: "block", marginTop: "0.25rem", opacity: previewLoading ? 0.5 : 1 }}
+            />
+          )}
         </div>
       )}
       <label style={{ display: "block", margin: "0.5rem 0" }}>
