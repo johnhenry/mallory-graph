@@ -180,6 +180,18 @@ export function NotebookPanel() {
     setBlocks((prev) => prev.filter((b) => b.id !== id));
   }
 
+  /** Swaps a block with its immediate neighbor in the given direction -- a no-op at either end of the list. */
+  function moveBlock(id: string, direction: -1 | 1) {
+    setBlocks((prev) => {
+      const i = prev.findIndex((b) => b.id === id);
+      const j = i + direction;
+      if (i === -1 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j] as Block, next[i] as Block];
+      return next;
+    });
+  }
+
   function updateText(id: string, content: string) {
     setBlocks((prev) => prev.map((b) => (b.id === id && b.type === "text" ? { ...b, content } : b)));
   }
@@ -214,8 +226,30 @@ export function NotebookPanel() {
 
   return (
     <div>
-      {blocks.map((block) => (
+      {blocks.map((block, i) => (
         <div key={block.id} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", margin: "0.75rem 0" }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <button
+              type="button"
+              onClick={() => moveBlock(block.id, -1)}
+              disabled={i === 0}
+              title="Move up"
+              aria-label="Move block up"
+              style={{ lineHeight: 1, padding: "0.15rem 0.4rem" }}
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              onClick={() => moveBlock(block.id, 1)}
+              disabled={i === blocks.length - 1}
+              title="Move down"
+              aria-label="Move block down"
+              style={{ lineHeight: 1, padding: "0.15rem 0.4rem" }}
+            >
+              ▼
+            </button>
+          </div>
           <div style={{ flex: 1 }}>
             {block.type === "text" ? (
               <textarea
