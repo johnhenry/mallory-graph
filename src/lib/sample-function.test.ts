@@ -73,6 +73,36 @@ test("sampleExprAdaptive still produces gaps at singularities (does not force a 
   assert.ok(path.commands.every((c) => Number.isFinite(c.x) && Number.isFinite(c.y)));
 });
 
+test("sampleExpr gaps a curve near a huge-but-finite asymptote sample when visibleYRange is given", () => {
+  // tan(x) near pi/2 (~1.5708): a high-resolution grid over [0,3] (step
+  // ~0.0003) guarantees some sample lands within ~0.00015 of the pole,
+  // where tan(x) is huge but still finite -- without visibleYRange this
+  // used to connect such points with one long line straight across the
+  // canvas. findDiscontinuities (not a raw moveTo count, which always
+  // includes one leading moveTo for the very start of the path -- not a
+  // gap) is the established way this file already checks for a real
+  // internal gap.
+  const withRange = sampleExpr("tan(x)", { min: 0, max: 3 }, 10000, "x", {}, 0x2563eb, { min: -10, max: 10 });
+  assert.ok(findDiscontinuities(withRange).length >= 1, "expected at least one gap near the pi/2 asymptote");
+});
+
+test("sampleExpr does not gap tan(x) when visibleYRange is omitted (backward compatible default)", () => {
+  const withoutRange = sampleExpr("tan(x)", { min: 0, max: 3 }, 50);
+  assert.equal(findDiscontinuities(withoutRange).length, 0, "no visibleYRange means no off-visible-plot gapping, matching pre-existing behavior");
+});
+
+test("sampleExpr does not false-positive gap an ordinary bounded curve when visibleYRange is given", () => {
+  const path = sampleExpr("sin(x)", { min: -10, max: 10 }, 50, "x", {}, 0x2563eb, { min: -10, max: 10 });
+  assert.equal(findDiscontinuities(path).length, 0);
+});
+
+test("sampleExprAdaptive gaps tan(x) near its asymptote when visibleYRange is given, but not without it", () => {
+  const withRange = sampleExprAdaptive("tan(x)", { min: 0, max: 3 }, 50, "x", {}, 0x2563eb, {}, { min: -10, max: 10 });
+  assert.ok(findDiscontinuities(withRange).length >= 1);
+  const withoutRange = sampleExprAdaptive("tan(x)", { min: 0, max: 3 }, 50);
+  assert.equal(findDiscontinuities(withoutRange).length, 0);
+});
+
 test("findRootCrossings finds the two roots of x^2-4 (a resolution-9 grid over [-3,3])", () => {
   const path = sampleExpr("x^2-4", { min: -3, max: 3 }, 13);
   const roots = findRootCrossings(path);

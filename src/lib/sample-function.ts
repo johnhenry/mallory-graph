@@ -24,7 +24,90 @@ export interface Domain {
  * samples into contiguous finite runs first, and calling `vectorToCurve`
  * once per run, produces the gap for free: each run's own leading `moveTo`
  * becomes the break when the command arrays are concatenated.
+ *
+ * `visibleYRange`, when supplied, extends this same run-breaking to a
+ * near-asymptote sample that's huge but still finite (e.g. `tan(x)` a few
+ * grid steps from a pole might sample ~50 or ~600 depending how close the
+ * grid lands, never actually `Infinity`) -- a magnitude check ("is this
+ * point way outside the visible plot"), not a sign check, so it uniformly
+ * covers both sign-changing poles (`tan`/`cot`) and same-sign blow-ups
+ * (`1/x^2`) with one rule. Omitted, behavior is unchanged from before this
+ * parameter existed.
  */
+export function isOffVisibleRange(y: number, visibleYRange?: { min: number; max: number }): boolean {
+  if (!visibleYRange) return false;
+  const span = visibleYRange.max - visibleYRange.min;
+  return Math.abs(y) > Math.abs(visibleYRange.min) + Math.abs(visibleYRange.max) + 5 * span;
+}
+
+/**
+ * Where the segment `a`-`b` crosses `visibleYRange`'s nearer boundary
+ * (`min` if `b` undershoots, `max` if it overshoots) -- linear
+ * interpolation, the same technique `findConditionCrossings` already uses
+ * for a threshold crossing between two samples. Returns `null` when
+ * interpolation isn't meaningful: no `visibleYRange`, either endpoint is
+ * non-finite (a genuine singularity/NaN gap has no boundary to aim for --
+ * unlike an off-visible-range gap, which is finite by definition), or the
+ * two y-values coincide.
+ */
+function boundaryCrossing(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  visibleYRange?: { min: number; max: number },
+): { x: number; y: number } | null {
+  if (!visibleYRange || !Number.isFinite(a.y) || !Number.isFinite(b.y) || a.y === b.y) return null;
+  // Inset 3% of the span from the true edge -- landing exactly on
+  // visibleYRange's boundary would put a discontinuity marker (a circle
+  // with its own radius) centered right on the canvas edge, half clipped
+  // off-screen by the canvas itself.
+  const span = visibleYRange.max - visibleYRange.min;
+  const inset = 0.03 * span;
+  const boundary = b.y > a.y ? visibleYRange.max - inset : visibleYRange.min + inset;
+  const t = (boundary - a.y) / (b.y - a.y);
+  if (!Number.isFinite(t) || t < 0 || t > 1) return null;
+  return { x: a.x + t * (b.x - a.x), y: boundary };
+}
+
+/**
+ * Shared run-segmentation for `sampleExpr`/`sampleExprAdaptive`: splits a
+ * flat point list into contiguous "valid" (finite, and within
+ * `visibleYRange` when supplied) runs, the same gap-tolerant-run mechanism
+ * both functions' own doc comments describe. When a run ends or begins at
+ * an off-visible-range point (not a genuine NaN/Infinity singularity), the
+ * run is capped with an interpolated point at the visible boundary
+ * (`boundaryCrossing`) rather than either drawing the huge raw sample or
+ * abruptly stopping mid-canvas -- this makes the curve visually run right
+ * up to the plot's edge before gapping, and gives `findDiscontinuities`'s
+ * `before`/`after` marker points a location that's actually on-screen,
+ * instead of off at the sampled value's own (possibly enormous) y.
+ */
+function pointsToRuns(points: { x: number; y: number }[], visibleYRange?: { min: number; max: number }): Vector<number>[][] {
+  const runs: Vector<number>[][] = [[]];
+  let prevPoint: { x: number; y: number } | null = null;
+  let prevValid = false;
+  for (const p of points) {
+    const finite = Number.isFinite(p.y);
+    const valid = finite && !isOffVisibleRange(p.y, visibleYRange);
+    const currentRun = runs[runs.length - 1] as Vector<number>[];
+    if (valid) {
+      if (!prevValid && prevPoint) {
+        const entry = boundaryCrossing(prevPoint, p, visibleYRange);
+        if (entry) currentRun.push(Vector.fromArray([entry.x, entry.y]));
+      }
+      currentRun.push(Vector.fromArray([p.x, p.y]));
+    } else {
+      if (prevValid && prevPoint && finite) {
+        const exit = boundaryCrossing(prevPoint, p, visibleYRange);
+        if (exit) currentRun.push(Vector.fromArray([exit.x, exit.y]));
+      }
+      if (currentRun.length > 0) runs.push([]);
+    }
+    prevPoint = p;
+    prevValid = valid;
+  }
+  return runs;
+}
+
 export function sampleExpr(
   expr: Expr | string,
   domain: Domain,
@@ -32,20 +115,17 @@ export function sampleExpr(
   variable = "x",
   params: Record<string, number> = {},
   color = 0x2563eb,
+  visibleYRange?: { min: number; max: number },
 ): Path2D {
   const compiled = Symbolic.compile(typeof expr === "string" ? preprocessImplicitMultiplication(expr) : expr);
   const env: Record<string, number> = { ...params, [variable]: 0 };
-  const runs: Vector<number>[][] = [[]];
+  const points: { x: number; y: number }[] = [];
   for (let i = 0; i < resolution; i++) {
     const x = domain.min + (i / (resolution - 1)) * (domain.max - domain.min);
     env[variable] = x;
-    const y = compiled(env);
-    if (Number.isFinite(y)) {
-      (runs[runs.length - 1] as Vector<number>[]).push(Vector.fromArray([x, y]));
-    } else if ((runs[runs.length - 1] as Vector<number>[]).length > 0) {
-      runs.push([]);
-    }
+    points.push({ x, y: compiled(env) });
   }
+  const runs = pointsToRuns(points, visibleYRange);
   const segments = runs.filter((run) => run.length > 0).map((run) => GraphUtils.vectorToCurve(Vector.fromArray(run), 2, color));
   if (segments.length === 0) return GraphUtils.vectorToCurve(Vector.fromArray([]), 2, color);
   return { stroke: (segments[0] as Path2D).stroke, commands: segments.flatMap((s) => s.commands) };
@@ -69,6 +149,10 @@ export interface AdaptiveOptions {
  * resolved. Non-goal: `tolerance` is an absolute y-unit threshold, not
  * scaled to the viewport's y-range, so the same default may under- or
  * over-refine for functions with very different output scales.
+ *
+ * `visibleYRange`: see `sampleExpr`'s own doc comment -- same off-visible-
+ * plot run-breaking, also applied inside `refine` so bisection doesn't
+ * waste depth smoothing a region that's about to be gapped anyway.
  */
 export function sampleExprAdaptive(
   expr: Expr | string,
@@ -78,6 +162,7 @@ export function sampleExprAdaptive(
   params: Record<string, number> = {},
   color = 0x2563eb,
   options: AdaptiveOptions = {},
+  visibleYRange?: { min: number; max: number },
 ): Path2D {
   const { maxDepth = 4, tolerance = 1e-3 } = options;
   const compiled = Symbolic.compile(typeof expr === "string" ? preprocessImplicitMultiplication(expr) : expr);
@@ -94,7 +179,15 @@ export function sampleExprAdaptive(
   }
 
   function refine(a: { x: number; y: number }, b: { x: number; y: number }, depth: number): { x: number; y: number }[] {
-    if (depth >= maxDepth || !Number.isFinite(a.y) || !Number.isFinite(b.y)) return [a];
+    if (
+      depth >= maxDepth ||
+      !Number.isFinite(a.y) ||
+      !Number.isFinite(b.y) ||
+      isOffVisibleRange(a.y, visibleYRange) ||
+      isOffVisibleRange(b.y, visibleYRange)
+    ) {
+      return [a];
+    }
     const xm = (a.x + b.x) / 2;
     const ym = evalAt(xm);
     // A non-finite midpoint means a singularity lives between a and b -- let
@@ -114,14 +207,7 @@ export function sampleExprAdaptive(
   const last = basePoints[basePoints.length - 1];
   if (last) refinedPoints.push(last);
 
-  const runs: Vector<number>[][] = [[]];
-  for (const p of refinedPoints) {
-    if (Number.isFinite(p.y)) {
-      (runs[runs.length - 1] as Vector<number>[]).push(Vector.fromArray([p.x, p.y]));
-    } else if ((runs[runs.length - 1] as Vector<number>[]).length > 0) {
-      runs.push([]);
-    }
-  }
+  const runs = pointsToRuns(refinedPoints, visibleYRange);
   const segments = runs.filter((run) => run.length > 0).map((run) => GraphUtils.vectorToCurve(Vector.fromArray(run), 2, color));
   if (segments.length === 0) return GraphUtils.vectorToCurve(Vector.fromArray([]), 2, color);
   return { stroke: (segments[0] as Path2D).stroke, commands: segments.flatMap((s) => s.commands) };

@@ -102,7 +102,16 @@ function useRowCells(graph: CellGraph, rowId: string, viewportCellId: string = V
               const parsed = Symbolic.parse(preprocessImplicitMultiplication(source));
               Symbolic.assertVariables(parsed, [AXIS_VARIABLE]);
             }
-            const path = sampleExprAdaptive(source, { min: viewport.xMin, max: viewport.xMax }, RESOLUTION, AXIS_VARIABLE, params, color);
+            const path = sampleExprAdaptive(
+              source,
+              { min: viewport.xMin, max: viewport.xMax },
+              RESOLUTION,
+              AXIS_VARIABLE,
+              params,
+              color,
+              {},
+              { min: viewport.yMin, max: viewport.yMax },
+            );
             return { ok: true, path };
           } catch (e) {
             return { ok: false, message: e instanceof Error ? e.message : String(e) };
@@ -164,6 +173,8 @@ function useRowCells(graph: CellGraph, rowId: string, viewportCellId: string = V
               AXIS_VARIABLE,
               params,
               color,
+              {},
+              { min: viewport.yMin, max: viewport.yMax },
             );
           } catch {
             // Keep the last good sample on a mid-typing parse error.

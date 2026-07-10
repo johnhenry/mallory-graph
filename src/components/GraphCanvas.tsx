@@ -120,6 +120,8 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
               RESOLUTION,
               AXIS_VARIABLE,
               params,
+              undefined,
+              { min: viewport.yMin, max: viewport.yMax },
             );
           } catch {
             if (!lastGoodPath) throw new Error(`Initial expression "${source}" failed to parse`);
@@ -232,6 +234,8 @@ function useExpressionGraph(cellId: string, source: string, viewport: Viewport, 
               RESOLUTION,
               AXIS_VARIABLE,
               params,
+              undefined,
+              { min: viewport.yMin, max: viewport.yMax },
             );
             lastGoodArea = { value, path };
           } catch {
