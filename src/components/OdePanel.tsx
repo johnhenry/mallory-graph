@@ -1,7 +1,10 @@
 import type { Path2D } from "mallory-math";
 import { useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { useServerFn } from "@tanstack/react-start";
 import { cellIdsOde } from "../lib/cell-ids.ts";
+import { startOdeExportJob } from "../lib/export-ode-video.ts";
+import { VideoExportControls } from "./VideoExportControls.tsx";
 import { drawPath, drawSlopeField, type Viewport } from "../lib/render-path.ts";
 import { attemptOdeClosedForm, type OdeClosedFormAttempt, sampleOdeSolution, sampleSlopeField, type SlopeFieldPoint } from "../lib/sample-ode.ts";
 import { useCell } from "../lib/use-cell.ts";
@@ -105,6 +108,7 @@ export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
   const closedForm = useCell<OdeClosedFormAttempt>(graph, ids.closedForm);
 
   const [exprInput, setExprInput] = useState(expr);
+  const startOdeExportJobFn = useServerFn(startOdeExportJob);
 
   function updateExpr(value: string) {
     setExprInput(value);
@@ -164,6 +168,24 @@ export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
       {(!solution.ok || !slopeField.ok) && (
         <p style={{ color: "crimson" }}>{!solution.ok ? solution.message : !slopeField.ok ? slopeField.message : ""}</p>
       )}
+      {/* Server-side ecmanim export: the slope field as a vector field plus
+          the RK4 solution progressively traced out from the initial
+          condition (johnhenry/mallory-graph#3, pass 2). */}
+      <VideoExportControls
+        filenameStem="mallory-graph-ode"
+        start={(format, duration) =>
+          startOdeExportJobFn({
+            data: {
+              source: expr,
+              x0: Number(x0) || 0,
+              y0: Number(y0) || 0,
+              viewport,
+              duration,
+              format,
+            },
+          })
+        }
+      />
     </div>
   );
 }

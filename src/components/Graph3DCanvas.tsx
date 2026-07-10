@@ -3,7 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { useServerFn } from "@tanstack/react-start";
 import { cellIds3D, type CellIds3D } from "../lib/cell-ids.ts";
+import { startSurfaceExportJob } from "../lib/export-surface-video.ts";
+import { VideoExportControls } from "./VideoExportControls.tsx";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { meshToGeometry, meshToMaterial } from "../lib/mesh-to-geometry.ts";
@@ -102,6 +105,7 @@ export function Graph3DCanvas({
   const freeVars = useCell<string[]>(graph, ids.freeVars);
   const exprValue = useCell<string>(graph, ids.expr);
   const [source, setSource] = useState(defaultSource);
+  const startSurfaceExportJobFn = useServerFn(startSurfaceExportJob);
   const containerRef = useRef<HTMLDivElement>(null);
   const surfaceGroupRef = useRef<THREE.Group | null>(null);
   const highlightGroupRef = useRef<THREE.Group | null>(null);
@@ -261,6 +265,25 @@ export function Graph3DCanvas({
       )}
       <div ref={containerRef} style={{ maxWidth: WIDTH, border: "1px solid #ccc" }} />
       <p style={{ fontSize: "0.85rem", color: "#666" }}>Drag to orbit, scroll to zoom.</p>
+      {/* Server-side ecmanim export: a full camera orbit around the current
+          surface (johnhenry/mallory-graph#3, pass 2) -- the live Three.js
+          canvas above stays the interactive view; this renders a shareable
+          clip of the same z = f(x, y). */}
+      <VideoExportControls
+        filenameStem="mallory-graph-surface"
+        start={(format, duration) =>
+          startSurfaceExportJobFn({
+            data: {
+              source: exprValue,
+              params: graph.hasValue(ids.params) ? graph.get<Record<string, number>>(ids.params) : {},
+              xDomain: DOMAIN,
+              yDomain: DOMAIN,
+              duration,
+              format,
+            },
+          })
+        }
+      />
     </div>
   );
 }

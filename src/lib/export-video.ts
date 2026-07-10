@@ -61,20 +61,17 @@ import {
   initMathTex,
   MathTex,
   rate_functions,
-  render,
   renderStill,
   Transform,
   ValueTracker,
 } from "ecmanim/node";
+import { completeExportJob, createExportJob, failExportJob, readExportJob, type ExportVideoResult } from "./export-jobs.ts";
+import { AXIS_COLOR, CURVE_COLOR, LABEL_COLOR, renderExportToBuffer, SQUARE_HALF_SPAN } from "./export-render.ts";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { findRootCrossings, sampleExpr } from "./sample-function.ts";
 import { HIGHLIGHT_PRELUDE_SECONDS, interpolateKeyframes, type Keyframe } from "./timeline.ts";
 
-const AXIS_COLOR = "#334155";
-const LABEL_COLOR = "#111827";
-const CURVE_COLOR = "#3b82f6";
-/** Half-height of ecmanim's frame in scene units; the render is square, so the visible half-WIDTH is also this. */
-const SQUARE_HALF_SPAN = 4;
+export type { ExportVideoResult } from "./export-jobs.ts";
 
 export interface ExportVideoInput {
   source: string;
@@ -87,30 +84,6 @@ export interface ExportVideoInput {
   format: "mp4" | "gif";
   /** Typeset equation label (LaTeX source, client-generated via exprToLatex). Absent/invalid just omits the label. */
   latex?: string;
-}
-
-export interface ExportVideoResult {
-  data: string;
-  mimeType: string;
-}
-
-type ExportJob =
-  | { status: "pending" }
-  | { status: "done"; result: ExportVideoResult }
-  | { status: "error"; message: string };
-
-const JOB_TTL_MS = 5 * 60 * 1000;
-const jobs = new Map<string, ExportJob>();
-const jobCreatedAt = new Map<string, number>();
-
-function sweepExpiredJobs() {
-  const now = Date.now();
-  for (const [id, createdAt] of jobCreatedAt) {
-    if (now - createdAt > JOB_TTL_MS) {
-      jobs.delete(id);
-      jobCreatedAt.delete(id);
-    }
-  }
 }
 
 let mathTexReady: Promise<unknown> | null = null;
@@ -218,36 +191,11 @@ function buildConstruct(data: ExportVideoInput, roots: { x: number; y: number }[
 }
 
 async function runExportJob(jobId: string, data: ExportVideoInput) {
-  const { format } = data;
   try {
     const construct = buildConstruct(data, initialRootCrossings(data));
-
-    const { promises: fs } = await import("node:fs");
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mallory-graph-export-"));
-    const outPath = path.join(dir, `export.${format}`);
-
-    try {
-      await render(construct, {
-        output: outPath,
-        format,
-        fps: 24,
-        pixelWidth: 640,
-        pixelHeight: 640,
-        background: "#ffffff",
-        verbose: false,
-      });
-      const buffer = await fs.readFile(outPath);
-      jobs.set(jobId, {
-        status: "done",
-        result: { data: buffer.toString("base64"), mimeType: format === "gif" ? "image/gif" : "video/mp4" },
-      });
-    } finally {
-      await fs.rm(dir, { recursive: true, force: true });
-    }
+    completeExportJob(jobId, await renderExportToBuffer(construct, data.format));
   } catch (e) {
-    jobs.set(jobId, { status: "error", message: e instanceof Error ? e.message : String(e) });
+    failExportJob(jobId, e);
   }
 }
 
@@ -257,10 +205,7 @@ export const startExportVideoJob = createServerFn({ method: "POST" })
     if (data.duration <= 0) {
       throw new Error("Nothing to export: no parameter has a keyframe track.");
     }
-    sweepExpiredJobs();
-    const jobId = crypto.randomUUID();
-    jobs.set(jobId, { status: "pending" });
-    jobCreatedAt.set(jobId, Date.now());
+    const jobId = createExportJob();
     // Deliberately not awaited: the render runs in the background while this
     // server fn returns immediately with a job id to poll.
     void runExportJob(jobId, data);
@@ -270,7 +215,7 @@ export const startExportVideoJob = createServerFn({ method: "POST" })
 export const getExportVideoJob = createServerFn({ method: "GET" })
   .validator((data: { jobId: string }) => data)
   .handler(async ({ data }) => {
-    const job = jobs.get(data.jobId);
+    const job = readExportJob(data.jobId);
     if (!job) throw new Error("Unknown or expired export job.");
     return job;
   });
