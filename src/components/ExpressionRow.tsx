@@ -70,6 +70,18 @@ function useRowCells(graph: CellGraph, rowId: string, viewportCellId: string = V
       // ever exists on that graph, so `hasValue` is always false there and
       // every free variable falls back to today's local-slider path
       // unchanged.
+      //
+      // `graph.get(externalId)` is called BEFORE the `hasValue` check
+      // (rather than only inside the `hasValue` branch) so this cell
+      // registers a dependency edge on `externalId` even when it doesn't
+      // exist yet -- `hasValue` alone never calls `ensure()`/registers
+      // anything, so a value block created *after* this compute first runs
+      // would otherwise never trigger a recompute here. `get()` on a
+      // not-yet-existing, never-`define`d/`set` cell returns `undefined`
+      // harmlessly (no compute function means no recompute attempt) but
+      // does register the edge, so once a matching value block's `set()`
+      // finally happens, this cell correctly goes dirty and re-resolves to
+      // the external value.
       graph.define(
         ids.params,
         () => {
@@ -77,7 +89,8 @@ function useRowCells(graph: CellGraph, rowId: string, viewportCellId: string = V
           const params: Record<string, number> = {};
           for (const name of names) {
             const externalId = notebookValueCellId(name);
-            params[name] = graph.hasValue(externalId) ? graph.get<number>(externalId) : graph.get<number>(ids.param(name));
+            const externalValue = graph.get<number | undefined>(externalId);
+            params[name] = graph.hasValue(externalId) ? (externalValue as number) : graph.get<number>(ids.param(name));
           }
           return params;
         },
