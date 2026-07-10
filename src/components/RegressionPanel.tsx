@@ -28,6 +28,7 @@ type FitResult =
       paramOrder: string[];
       params: Record<string, number>;
       residualNorm: number;
+      rSquared: number;
       points: { x: number; y: number }[];
     }
   | { ok: false; message: string };
@@ -124,7 +125,14 @@ function useRegressionGraph(cellId: string): CellGraph {
           paramOrder.forEach((name, i) => {
             params[name] = result.params[i] as number;
           });
-          return { ok: true, kind: "nonlinear", paramOrder, params, residualNorm: result.residualNorm, points };
+          // R^2 = 1 - SS_res/SS_tot, the same goodness-of-fit convention the
+          // linear path already shows via r/r^2 -- SS_res is just
+          // residualNorm^2 (Numerical.levenbergMarquardt's own convention:
+          // residualNorm is the sqrt of the summed squared residuals).
+          const yMean = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+          const ssTot = points.reduce((sum, p) => sum + (p.y - yMean) ** 2, 0);
+          const rSquared = 1 - result.residualNorm ** 2 / ssTot;
+          return { ok: true, kind: "nonlinear", paramOrder, params, residualNorm: result.residualNorm, rSquared, points };
         } catch (e) {
           return { ok: false, message: e instanceof Error ? e.message : String(e) };
         }
@@ -320,7 +328,7 @@ export function RegressionPanel({ cellId = "regression-1" }: RegressionPanelProp
                 {name} = {(fit.params[name] as number).toFixed(4)}
               </span>
             ))}{" "}
-            (residual norm = {fit.residualNorm.toFixed(6)})
+            (residual norm = {fit.residualNorm.toFixed(6)}, r² = {fit.rSquared.toFixed(4)})
           </p>
         )
       ) : (
