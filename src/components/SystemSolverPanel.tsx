@@ -1,4 +1,4 @@
-import { Symbolic } from "mallory-math";
+import { NonLinearSystemError, Symbolic } from "mallory-math";
 import { useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsSystem } from "../lib/cell-ids.ts";
@@ -6,7 +6,9 @@ import { equationToImplicitZero } from "../lib/equation-to-zero.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { useCell } from "../lib/use-cell.ts";
 
-type SolutionResult = { ok: true; values: Record<string, number> } | { ok: false; message: string };
+type SolutionResult =
+  | { ok: true; values: Record<string, number>; method: "exact" | "numeric" }
+  | { ok: false; message: string };
 
 const DEFAULT_EQUATIONS = ["2*x + 3*y = 12", "x - y = 1"];
 const DEFAULT_VARIABLES = "x,y";
@@ -33,16 +35,28 @@ function useSystemGraph(cellId: string): CellGraph {
       // typing target -- *why* it failed is the useful output here, not a
       // flicker-free canvas.
       graph.define(ids.solution, (): SolutionResult => {
+        const equations = graph.get<string[]>(ids.equations);
+        const variablesText = graph.get<string>(ids.variables);
+        const variables = variablesText
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean);
+        const exprs = equations.map((eq) => preprocessImplicitMultiplication(equationToImplicitZero(eq)));
         try {
-          const equations = graph.get<string[]>(ids.equations);
-          const variablesText = graph.get<string>(ids.variables);
-          const variables = variablesText
-            .split(",")
-            .map((v) => v.trim())
-            .filter(Boolean);
-          const exprs = equations.map((eq) => preprocessImplicitMultiplication(equationToImplicitZero(eq)));
           const values = Symbolic.solveSystem(exprs, variables);
-          return { ok: true, values };
+          return { ok: true, values, method: "exact" };
+        } catch (e) {
+          if (!(e instanceof NonLinearSystemError)) {
+            return { ok: false, message: e instanceof Error ? e.message : String(e) };
+          }
+        }
+        // Nonlinear -- fall back to the damped-Newton numeric solver (never
+        // throws NonLinearSystemError itself; only finds one root near its
+        // default initial guess, so a genuinely bad guess or a system with
+        // multiple solutions can still fail/pick an unexpected root).
+        try {
+          const values = Symbolic.solveSystemNumeric(exprs, variables);
+          return { ok: true, values, method: "numeric" };
         } catch (e) {
           return { ok: false, message: e instanceof Error ? e.message : String(e) };
         }
@@ -128,13 +142,20 @@ export function SystemSolverPanel({ cellId = "system-1" }: SystemSolverPanelProp
       </div>
       <div style={{ margin: "0.5rem 0" }}>
         {solution.ok ? (
-          <ul>
-            {Object.entries(solution.values).map(([name, value]) => (
-              <li key={name}>
-                {name} = {value.toFixed(4)}
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul>
+              {Object.entries(solution.values).map(([name, value]) => (
+                <li key={name}>
+                  {name} = {value.toFixed(4)}
+                </li>
+              ))}
+            </ul>
+            {solution.method === "numeric" && (
+              <p style={{ fontSize: "0.85rem", color: "#5b6b8c" }}>
+                Solved numerically (the system isn't linear) -- finds one nearby root, not necessarily every solution.
+              </p>
+            )}
+          </>
         ) : (
           <p style={{ color: "crimson" }}>{solution.message}</p>
         )}

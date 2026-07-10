@@ -10,11 +10,13 @@ function SystemsPage() {
     <div>
       <h1>mallory-graph — system of equations</h1>
       <details>
-        <summary>Solves a system of linear equations via Symbolic.solveSystem.</summary>
+        <summary>Solves a system of equations, linear via Symbolic.solveSystem or nonlinear via a numeric fallback.</summary>
         <p>
-          Bridging to <code>MatrixMath</code>'s LU-based solver. Throws on a genuinely nonlinear or singular system
-          rather than returning a wrong answer. Add or remove equations freely -- just keep the equation count
-          matching the variable count (a square system).
+          Bridging to <code>MatrixMath</code>'s LU-based solver for a linear system. A genuinely nonlinear system
+          falls back to <code>Symbolic.solveSystemNumeric</code> (damped Newton's method) automatically, finding one
+          root near its default initial guess -- a system with multiple solutions may not find every one, and a
+          singular system still throws rather than returning a wrong answer. Add or remove equations freely -- just
+          keep the equation count matching the variable count (a square system).
         </p>
       </details>
       <p>
