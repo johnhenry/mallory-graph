@@ -1,6 +1,7 @@
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { interiorAngleRadians, shoelaceArea } from "../lib/geometry.ts";
 import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY, type Viewport } from "../lib/viewport.ts";
 
 const WIDTH = 500;
@@ -27,6 +28,13 @@ const lineCellId = (id: string) => `geomLine:${id}`;
 const circleCellId = (id: string) => `geomCircle:${id}`;
 const lengthCellId = (id: string) => `geomLength:${id}`;
 const radiusCellId = (id: string) => `geomRadius:${id}`;
+// Angle/polygon each split a *record* cell (which points define it) from a
+// *dependent value* cell (the number itself), same as line/circle already
+// split lineCellId/circleCellId from lengthCellId/radiusCellId.
+const angleRecordCellId = (id: string) => `geomAngleRecord:${id}`;
+const angleValueCellId = (id: string) => `geomAngleValue:${id}`;
+const polygonCellId = (id: string) => `geomPolygon:${id}`;
+const areaCellId = (id: string) => `geomArea:${id}`;
 
 interface PointRecord {
   x: number;
@@ -40,8 +48,16 @@ interface CircleRecord {
   center: string;
   radiusPoint: string;
 }
+interface AngleRecord {
+  a: string;
+  vertex: string;
+  c: string;
+}
+interface PolygonRecord {
+  points: string[];
+}
 
-type Tool = "point" | "line" | "circle" | "reflect" | "rotate" | "translate";
+type Tool = "point" | "line" | "circle" | "reflect" | "rotate" | "translate" | "scale" | "angle" | "polygon";
 
 /**
  * v1 GeoGebra-style construction tools built directly on Wave 1's free/
@@ -91,9 +107,16 @@ export function GeometryPanel() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [tool, setTool] = useState<Tool>("point");
   const [pending, setPending] = useState<string | null>(null);
+  // Angle needs a 3-click sequence and Polygon an unbounded one -- neither
+  // fits the single `pending: string | null` selection every other tool
+  // (line/circle/reflect/rotate/scale/translate) shares, so each gets its
+  // own accumulator, reset alongside `pending` on every tool/construction change.
+  const [pendingAngle, setPendingAngle] = useState<string[]>([]);
+  const [pendingPolygon, setPendingPolygon] = useState<string[]>([]);
   const [angleInput, setAngleInput] = useState("90");
   const [dxInput, setDxInput] = useState("1");
   const [dyInput, setDyInput] = useState("0");
+  const [factorInput, setFactorInput] = useState("2");
   const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
 
   function addPoint(x: number, y: number): string {
@@ -163,6 +186,41 @@ export function GeometryPanel() {
     pushObject(graph, id);
   }
 
+  /** Scales `source` about `center` by a fixed factor, captured at construction time -- the source/center dependency stays live. */
+  function addScale(source: string, center: string, factor: number): void {
+    const id = crypto.randomUUID();
+    graph.define(pointCellId(id), (): PointRecord => {
+      const s = graph.get<PointRecord>(pointCellId(source));
+      const c = graph.get<PointRecord>(pointCellId(center));
+      return { x: c.x + factor * (s.x - c.x), y: c.y + factor * (s.y - c.y) };
+    });
+    pushObject(graph, id);
+  }
+
+  /** Interior angle ABC at `vertex`, reading all three points live -- same record/dependent-value split as Line/Circle. */
+  function addAngle(a: string, vertex: string, c: string): void {
+    const id = crypto.randomUUID();
+    graph.set(angleRecordCellId(id), { a, vertex, c } as AngleRecord);
+    graph.define(angleValueCellId(id), (): number => {
+      const pa = graph.get<PointRecord>(pointCellId(a));
+      const pv = graph.get<PointRecord>(pointCellId(vertex));
+      const pc = graph.get<PointRecord>(pointCellId(c));
+      return interiorAngleRadians(pa, pv, pc);
+    });
+    pushObject(graph, id);
+  }
+
+  /** An ordered vertex loop, closed by re-clicking the first vertex -- area via the shoelace formula, reading every point live. */
+  function addPolygon(points: string[]): void {
+    const id = crypto.randomUUID();
+    graph.set(polygonCellId(id), { points } as PolygonRecord);
+    graph.define(areaCellId(id), (): number => {
+      const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
+      return shoelaceArea(pts);
+    });
+    pushObject(graph, id);
+  }
+
   function dataCoordsFromEvent(e: PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
     const { sx, sy } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);
     return { x: toDataX(sx, VIEWPORT, WIDTH), y: toDataY(sy, VIEWPORT, HEIGHT) };
@@ -173,6 +231,26 @@ export function GeometryPanel() {
     if (tool === "point") return; // clicking an existing point with the Point tool is a no-op; drag it instead
     if (tool === "translate") {
       addTranslation(hitId, Number(dxInput) || 0, Number(dyInput) || 0);
+      return;
+    }
+    if (tool === "angle") {
+      const next = [...pendingAngle, hitId];
+      if (next.length < 3) {
+        setPendingAngle(next);
+      } else {
+        addAngle(next[0] as string, next[1] as string, next[2] as string);
+        setPendingAngle([]);
+      }
+      return;
+    }
+    if (tool === "polygon") {
+      if (pendingPolygon.length >= 3 && hitId === pendingPolygon[0]) {
+        addPolygon(pendingPolygon);
+        setPendingPolygon([]);
+        return;
+      }
+      if (pendingPolygon.includes(hitId) && hitId !== pendingPolygon[0]) return; // ignore re-clicking a non-closing vertex already in the loop
+      setPendingPolygon([...pendingPolygon, hitId]);
       return;
     }
     if (!pending) {
@@ -187,12 +265,13 @@ export function GeometryPanel() {
     else if (tool === "circle") addCircle(pending, hitId);
     else if (tool === "reflect") addReflection(pending, hitId);
     else if (tool === "rotate") addRotation(pending, hitId, Number(angleInput) || 90);
+    else if (tool === "scale") addScale(pending, hitId, Number(factorInput) || 2);
     setPending(null);
   }
 
   function handleEmptyClick(x: number, y: number) {
     if (tool === "point") addPoint(x, y);
-    // line/circle/reflect/rotate/translate only connect existing points -- clicking empty space is a no-op
+    // every other tool only connects existing points -- clicking empty space is a no-op
   }
 
   function handlePointerDown(e: PointerEvent<HTMLCanvasElement>) {
@@ -244,7 +323,8 @@ export function GeometryPanel() {
         if (graph.has(pointCellId(id))) {
           const p = graph.get<PointRecord>(pointCellId(id));
           const isFree = graph.role(pointCellId(id)) === "free";
-          const color = id === pending ? "#dc2626" : isFree ? "#2563eb" : "#5b6b8c";
+          const isPendingSelection = id === pending || pendingAngle.includes(id) || pendingPolygon.includes(id);
+          const color = isPendingSelection ? "#dc2626" : isFree ? "#2563eb" : "#5b6b8c";
           drawDot(ctx, p.x, p.y, color);
         } else if (graph.has(lineCellId(id))) {
           const { a, b } = graph.get<LineRecord>(lineCellId(id));
@@ -264,30 +344,57 @@ export function GeometryPanel() {
           // inline, which also makes it appear in the Objects list.
           const radius = graph.get<number>(radiusCellId(id));
           drawCircle(ctx, pc, radius, radius < DEGENERATE_EPSILON);
+        } else if (graph.has(angleRecordCellId(id))) {
+          const { a, vertex, c } = graph.get<AngleRecord>(angleRecordCellId(id));
+          const pa = graph.get<PointRecord>(pointCellId(a));
+          const pv = graph.get<PointRecord>(pointCellId(vertex));
+          const pc = graph.get<PointRecord>(pointCellId(c));
+          // Reads the dependent angle value the same reuse-it-for-drawing
+          // pattern length/radius already establish (also populates hasValue
+          // for AlgebraView's Objects list).
+          const angle = graph.get<number>(angleValueCellId(id));
+          drawAngle(ctx, pa, pv, pc, angle);
+        } else if (graph.has(polygonCellId(id))) {
+          const { points } = graph.get<PolygonRecord>(polygonCellId(id));
+          const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
+          // Same reasoning as length/radius/angle above.
+          graph.get<number>(areaCellId(id));
+          drawPolygon(ctx, pts);
         }
       }
     }
     redraw();
     return graph.subscribeAll(redraw);
-    // `pending` isn't graph state, so it can't trigger a redraw via
-    // subscribeAll -- re-running this effect (which calls redraw() once
-    // immediately) on selection change is what keeps the highlight in sync.
+    // `pending`/`pendingAngle`/`pendingPolygon` aren't graph state, so they
+    // can't trigger a redraw via subscribeAll -- re-running this effect
+    // (which calls redraw() once immediately) on selection change is what
+    // keeps the highlight in sync.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, pending]);
+  }, [graph, pending, pendingAngle, pendingPolygon]);
 
   const hint =
     tool === "point"
       ? "Click empty space to place a point, or drag an existing one."
       : tool === "translate"
         ? "Click a point to translate it by (dx, dy)."
-        : pending
-          ? `Click the ${tool === "line" ? "second" : tool === "circle" ? "radius" : "reference"} point (highlighted point selected).`
-          : `Click a point to start a ${tool}.`;
+        : tool === "angle"
+          ? pendingAngle.length === 0
+            ? "Click a point, then the vertex, then the other point."
+            : pendingAngle.length === 1
+              ? "Click the vertex point."
+              : "Click the other point."
+          : tool === "polygon"
+            ? pendingPolygon.length === 0
+              ? "Click each vertex in order; click the first vertex again to close the polygon."
+              : `Click the next vertex, or click the first vertex again to close (${pendingPolygon.length} so far).`
+            : pending
+              ? `Click the ${tool === "line" ? "second" : tool === "circle" ? "radius" : "reference"} point (highlighted point selected).`
+              : `Click a point to start a ${tool}.`;
 
   return (
     <div>
       <div style={{ margin: "0.25rem 0", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-        {(["point", "line", "circle", "reflect", "rotate", "translate"] as const).map((t) => (
+        {(["point", "line", "circle", "reflect", "rotate", "translate", "scale", "angle", "polygon"] as const).map((t) => (
           <label key={t}>
             <input
               type="radio"
@@ -295,6 +402,8 @@ export function GeometryPanel() {
               onChange={() => {
                 setTool(t);
                 setPending(null);
+                setPendingAngle([]);
+                setPendingPolygon([]);
               }}
             />{" "}
             {t}
@@ -304,6 +413,12 @@ export function GeometryPanel() {
           <label>
             angle (°):{" "}
             <input value={angleInput} onChange={(e) => setAngleInput(e.target.value)} style={{ font: "inherit", width: "5ch" }} />
+          </label>
+        )}
+        {tool === "scale" && (
+          <label>
+            factor:{" "}
+            <input value={factorInput} onChange={(e) => setFactorInput(e.target.value)} style={{ font: "inherit", width: "5ch" }} />
           </label>
         )}
         {tool === "translate" && (
@@ -365,6 +480,67 @@ function drawCircle(ctx: CanvasRenderingContext2D, center: PointRecord, radius: 
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(sx, sy, screenRadius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * A small fixed-radius arc at `vertex` sweeping through the interior (non-
+ * reflex) angle between rays to `a`/`c`, plus a degree-label near its
+ * midpoint. Canvas angles increase in the visually-clockwise direction
+ * (screen y grows downward), so the two ray angles are computed directly
+ * in screen space rather than converted from data space -- arc-drawing is
+ * inherently a screen-space operation. The signed, wrapped difference
+ * `diff` (always in (-PI, PI]) both picks the sweep direction (anticlockwise
+ * when negative) and locates the arc's angular midpoint for the label,
+ * matching interiorAngleRadians' own "always the <=180 degree angle"
+ * convention.
+ */
+function drawAngle(ctx: CanvasRenderingContext2D, a: PointRecord, vertex: PointRecord, c: PointRecord, angleRadians: number): void {
+  const vx = toScreenX(vertex.x, VIEWPORT, WIDTH);
+  const vy = toScreenY(vertex.y, VIEWPORT, HEIGHT);
+  const ax = toScreenX(a.x, VIEWPORT, WIDTH);
+  const ay = toScreenY(a.y, VIEWPORT, HEIGHT);
+  const cx = toScreenX(c.x, VIEWPORT, WIDTH);
+  const cy = toScreenY(c.y, VIEWPORT, HEIGHT);
+  const theta1 = Math.atan2(ay - vy, ax - vx);
+  const theta2 = Math.atan2(cy - vy, cx - vx);
+  let diff = theta2 - theta1;
+  while (diff <= -Math.PI) diff += 2 * Math.PI;
+  while (diff > Math.PI) diff -= 2 * Math.PI;
+  const anticlockwise = diff < 0;
+  const ARC_RADIUS = 20;
+  ctx.save();
+  ctx.strokeStyle = "#9333ea";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(vx, vy, ARC_RADIUS, theta1, theta2, anticlockwise);
+  ctx.stroke();
+  const mid = theta1 + diff / 2;
+  const labelX = vx + (ARC_RADIUS + 14) * Math.cos(mid);
+  const labelY = vy + (ARC_RADIUS + 14) * Math.sin(mid);
+  ctx.fillStyle = "#5b6b8c";
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${((angleRadians * 180) / Math.PI).toFixed(1)}°`, labelX, labelY);
+  ctx.restore();
+}
+
+/** An ordered vertex loop, closed back to the first point -- a distinct color from Line's/Circle's palette. */
+function drawPolygon(ctx: CanvasRenderingContext2D, points: PointRecord[]): void {
+  if (points.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = "#0891b2";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const first = points[0] as PointRecord;
+  ctx.moveTo(toScreenX(first.x, VIEWPORT, WIDTH), toScreenY(first.y, VIEWPORT, HEIGHT));
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i] as PointRecord;
+    ctx.lineTo(toScreenX(p.x, VIEWPORT, WIDTH), toScreenY(p.y, VIEWPORT, HEIGHT));
+  }
+  ctx.closePath();
   ctx.stroke();
   ctx.restore();
 }

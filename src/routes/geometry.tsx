@@ -21,7 +21,9 @@ function GeometryPage() {
           position is entirely determined by what it was built from. A Line/Circle whose defining points have
           collapsed onto each other (zero length/radius) draws in amber instead — the same declarative
           condition-flag pattern <code>/multi</code> uses for root crossings and discontinuities, applied here to
-          "this construction has degenerated."
+          "this construction has degenerated." Scale dilates a point about a center by a fixed factor; Angle measures
+          the interior angle between two rays (click a point, the vertex, then the other point); Polygon connects an
+          ordered run of vertices, closed by re-clicking the first one, with its area shown in the Objects list.
         </p>
       </details>
       <p>
