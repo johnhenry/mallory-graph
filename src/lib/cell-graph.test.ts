@@ -175,3 +175,52 @@ test("list enumerates every cell with its role and auxiliary flag", () => {
   assert.deepEqual(entries.get("hidden"), { id: "hidden", role: "free", auxiliary: true, hasValue: true });
   assert.deepEqual(entries.get("b"), { id: "b", role: "dependent", auxiliary: false, hasValue: true });
 });
+
+test("delete() marks former dependents dirty so their next get() recomputes without the deleted cell", () => {
+  // Mirrors ExpressionRow's params compute exactly: read an external cell
+  // unconditionally (registering the edge even before it exists), use it
+  // only if it has a real value, else fall back to a local cell.
+  const g = new CellGraph();
+  g.set("external", 5);
+  g.set("local", 1);
+  g.define("out", () => {
+    const ext = g.get<number | undefined>("external");
+    return g.hasValue("external") ? (ext as number) : g.get<number>("local");
+  });
+  assert.equal(g.get("out"), 5);
+  g.delete("external");
+  assert.equal(g.get("out"), 1, "recomputes and falls back to the local cell");
+  // The recompute above rebuilt out's dependency edges -- a later write to
+  // the fallback dependency must now reach it (before the delete() fix,
+  // the edge never rebuilt, so this write was silently lost too).
+  g.set("local", 42);
+  assert.equal(g.get("out"), 42);
+});
+
+test("delete() notifies subscribers of former dependents (not just marks dirty)", () => {
+  const g = new CellGraph();
+  g.set("source", 1);
+  g.define("derived", () => g.get<number>("source") * 2);
+  g.get("derived");
+  let notified = 0;
+  g.subscribe("derived", () => notified++);
+  g.delete("source");
+  assert.ok(notified >= 1, "the dependent's subscriber fired on delete of its dependency");
+});
+
+test("delete() of a nonexistent or never-touched id is a harmless no-op", () => {
+  const g = new CellGraph();
+  g.delete("never-existed"); // must not throw
+  g.set("a", 1);
+  g.delete("a");
+  g.delete("a"); // double delete is fine too
+  assert.equal(g.hasValue("a"), false);
+});
+
+test("get() on a deleted id re-creates an empty record with 'never existed' semantics", () => {
+  const g = new CellGraph();
+  g.set("a", 7);
+  g.delete("a");
+  assert.equal(g.get("a"), undefined);
+  assert.equal(g.hasValue("a"), false);
+});

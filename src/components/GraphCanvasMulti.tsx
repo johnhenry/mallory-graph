@@ -177,11 +177,23 @@ export function GraphCanvasMulti() {
     graph.set(EXPRESSION_LIST_CELL, [...current, id]);
   }
 
+  // Removes the row from the shared list FIRST (so the redraw/URL-sync
+  // listeners that fire synchronously on that set no longer read the row),
+  // then deletes the row's own cells -- previously they were left as
+  // permanent orphans. Deleting expr/params also marks INTERSECTIONS_CELL
+  // dirty (CellGraph.delete notifies former dependents), so stale
+  // intersection markers involving the removed curve recompute away.
   function removeRow(id: string) {
     graph.set(
       EXPRESSION_LIST_CELL,
       graph.get<string[]>(EXPRESSION_LIST_CELL).filter((existing) => existing !== id),
     );
+    const ids = cellIdsMultiRow(id);
+    const freeVars = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
+    for (const name of freeVars) graph.delete(ids.param(name));
+    for (const cellId of Object.values(ids)) {
+      if (typeof cellId === "string") graph.delete(cellId);
+    }
   }
 
   function forkView() {

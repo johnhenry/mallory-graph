@@ -211,13 +211,34 @@ export class CellGraph {
     return this.cells.get(id)?.hasValue ?? false;
   }
 
+  /**
+   * Remove a cell entirely. Former *dependents* are marked dirty and
+   * notified (same as a `set()` would), so a compute that read the deleted
+   * cell re-runs and can fall back to whatever "this cell doesn't exist"
+   * means for it -- without this, a dependent kept its stale cached value
+   * forever, AND (because its dependency edges only rebuild during a
+   * recompute that never came) writes to its other dependencies stopped
+   * reaching it too. The notification happens *after* the cell is gone, so
+   * the reentrant recompute a listener may trigger sees the post-delete
+   * world: a `get()` on the deleted id re-creates an empty record
+   * (`hasValue: false`), exactly the "never existed" semantics callers
+   * like ExpressionRow's params compute already handle.
+   */
   delete(id: string): void {
     const cell = this.cells.get(id);
     if (!cell) return;
+    const formerDependents = [...cell.dependents];
     for (const depId of cell.dependencies) this.cells.get(depId)?.dependents.delete(id);
     for (const depId of cell.dependents) this.cells.get(depId)?.dependencies.delete(id);
     this.cells.delete(id);
     this.listeners.delete(id);
+    for (const depId of formerDependents) {
+      const dep = this.cells.get(depId);
+      if (!dep || dep.dirty) continue;
+      dep.dirty = true;
+      this.emit(depId);
+      this.propagateDirty(depId);
+    }
   }
 
   private ensure<T>(id: string): CellRecord<T> {

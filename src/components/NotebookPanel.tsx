@@ -176,7 +176,38 @@ export function NotebookPanel() {
     setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "value", name, value: 1 }]);
   }
 
+  // Removing a block also deletes its cells from the shared CellGraph --
+  // same correctness reasoning as updateValueName's rename cleanup below: a
+  // graph block still referencing a removed value block's name must fall
+  // back to its own local slider (CellGraph.delete notifies former
+  // dependents), not silently keep reading an orphaned cell forever. The
+  // deletes happen outside the setBlocks updater (which stays pure), before
+  // it, so any reentrant redraw a delete triggers still sees the block's
+  // remaining cells; a graph block's expressionList/viewport are deleted
+  // last since its still-mounted redraw reads them unguarded.
   function removeBlock(id: string) {
+    const removed = blocks.find((b) => b.id === id);
+    if (removed?.type === "value") {
+      const nameStillUsedElsewhere = blocks.some((b) => b.id !== id && b.type === "value" && b.name === removed.name);
+      if (!nameStillUsedElsewhere) graph.delete(notebookValueCellId(removed.name));
+    } else if (removed?.type === "graph") {
+      const blockIds = cellIdsNotebookBlock(id);
+      if (graph.hasValue(blockIds.expressionList)) {
+        for (const rowId of graph.get<string[]>(blockIds.expressionList)) {
+          const ids = cellIdsMultiRow(rowId);
+          // Read the row's free-var names before deleting anything, to
+          // enumerate its per-name param cells (ids.param is a function,
+          // not a fixed id, so they can't come from Object.values below).
+          const freeVars = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
+          for (const name of freeVars) graph.delete(ids.param(name));
+          for (const cellId of Object.values(ids)) {
+            if (typeof cellId === "string") graph.delete(cellId);
+          }
+        }
+      }
+      graph.delete(blockIds.expressionList);
+      graph.delete(blockIds.viewport);
+    }
     setBlocks((prev) => prev.filter((b) => b.id !== id));
   }
 
