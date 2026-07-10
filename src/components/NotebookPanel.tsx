@@ -184,19 +184,22 @@ export function NotebookPanel() {
     setBlocks((prev) => prev.map((b) => (b.id === id && b.type === "text" ? { ...b, content } : b)));
   }
 
-  // Renaming writes the value under the NEW name's cell, leaving the old
-  // name's cell as a harmless orphan -- same tolerance for orphaned cells
-  // GraphCanvasMulti's own removeRow already has (it doesn't clean up a
-  // removed row's cells either), and simpler than trying to migrate/rename
-  // a cell in place.
+  // Renaming writes the value under the NEW name's cell, then removes the
+  // OLD name's cell -- unless another still-active value block shares that
+  // old name (a pre-existing ambiguity this component doesn't otherwise
+  // prevent: two value blocks with the same name both write into the same
+  // cell), in which case deleting it would silently break that other
+  // block's live value out from under it, so it's left alone in that case.
   function updateValueName(id: string, name: string) {
-    setBlocks((prev) =>
-      prev.map((b) => {
-        if (b.id !== id || b.type !== "value") return b;
-        graph.set(notebookValueCellId(name), b.value);
-        return { ...b, name };
-      }),
-    );
+    setBlocks((prev) => {
+      const renamed = prev.find((b) => b.id === id && b.type === "value");
+      if (!renamed || renamed.type !== "value") return prev;
+      const oldName = renamed.name;
+      const oldNameStillUsedElsewhere = prev.some((b) => b.id !== id && b.type === "value" && b.name === oldName);
+      graph.set(notebookValueCellId(name), renamed.value);
+      if (oldName !== name && !oldNameStillUsedElsewhere) graph.delete(notebookValueCellId(oldName));
+      return prev.map((b) => (b.id === id && b.type === "value" ? { ...b, name } : b));
+    });
   }
 
   function updateValueNumber(id: string, value: number) {
