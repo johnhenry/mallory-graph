@@ -16,6 +16,7 @@ import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
 import { interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/timeline.ts";
 import { AlgebraView } from "./AlgebraView.tsx";
+import { CopyableTex } from "./CopyableTex.tsx";
 import { TexSpan } from "./TexSpan.tsx";
 import { useCell } from "../lib/use-cell.ts";
 import { canvasEventPoint, toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
@@ -699,8 +700,9 @@ export function GraphCanvas({
       {modulus === null && derivative && (
         <div style={{ margin: "0.5rem 0" }}>
           <button type="button" onClick={() => setShowSteps((v) => !v)}>
-            {showSteps ? "▾" : "▸"} Show steps: dy/dx = <TexSpan tex={exprToLatex(derivative.result)} />
-          </button>
+            {showSteps ? "▾" : "▸"} Show steps
+          </button>{" "}
+          dy/dx = <CopyableTex tex={exprToLatex(derivative.result)} />
           {showSteps && (
             <ol>
               {derivative.steps.map((step, i) => (

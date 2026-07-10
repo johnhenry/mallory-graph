@@ -5,7 +5,7 @@ import { cellIdsOde } from "../lib/cell-ids.ts";
 import { drawPath, drawSlopeField, type Viewport } from "../lib/render-path.ts";
 import { attemptOdeClosedForm, type OdeClosedFormAttempt, sampleOdeSolution, sampleSlopeField, type SlopeFieldPoint } from "../lib/sample-ode.ts";
 import { useCell } from "../lib/use-cell.ts";
-import { TexSpan } from "./TexSpan.tsx";
+import { CopyableTex } from "./CopyableTex.tsx";
 
 type SolutionResult = { ok: true; path: Path2D } | { ok: false; message: string };
 type SlopeFieldResult = { ok: true; points: SlopeFieldPoint[] } | { ok: false; message: string };
@@ -157,7 +157,7 @@ export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
       </div>
       {closedForm.found && (
         <p style={{ margin: "0.25rem 0" }}>
-          Closed form: <TexSpan tex={closedForm.explicit ? `y = ${closedForm.latex}` : `${closedForm.latex} = 0`} />
+          Closed form: <CopyableTex tex={closedForm.explicit ? `y = ${closedForm.latex}` : `${closedForm.latex} = 0`} />
         </p>
       )}
       <canvas ref={canvasRef} width={WIDTH} height={HEIGHT} style={{ border: "1px solid #ccc" }} />
