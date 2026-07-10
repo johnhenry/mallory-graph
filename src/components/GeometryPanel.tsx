@@ -1,7 +1,7 @@
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CellGraph } from "../lib/cell-graph.ts";
-import { interiorAngleRadians, shoelaceArea } from "../lib/geometry.ts";
+import { interiorAngleRadians, isSelfIntersecting, polygonCentroid, shoelaceArea } from "../lib/geometry.ts";
 import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY, type Viewport } from "../lib/viewport.ts";
 
 const WIDTH = 500;
@@ -35,6 +35,7 @@ const angleRecordCellId = (id: string) => `geomAngleRecord:${id}`;
 const angleValueCellId = (id: string) => `geomAngleValue:${id}`;
 const polygonCellId = (id: string) => `geomPolygon:${id}`;
 const areaCellId = (id: string) => `geomArea:${id}`;
+const polygonSelfIntersectingCellId = (id: string) => `geomSelfIntersecting:${id}`;
 
 interface PointRecord {
   x: number;
@@ -210,13 +211,27 @@ export function GeometryPanel() {
     pushObject(graph, id);
   }
 
-  /** An ordered vertex loop, closed by re-clicking the first vertex -- area via the shoelace formula, reading every point live. */
+  /**
+   * An ordered vertex loop, closed by re-clicking the first vertex -- area
+   * via the shoelace formula, reading every point live. The
+   * self-intersection flag is its own dependent cell (the same declarative
+   * "condition read off a dependent cell, decoupled from drawing" pattern
+   * the degenerate line/circle flags use), so it recomputes live as
+   * vertices drag and shows up in the Objects list alongside the area.
+   * Note the shoelace number is only a meaningful "area" when this flag is
+   * false -- the flag is the caveat, per this panel's flag-don't-block
+   * convention (a degenerate line isn't prevented either, just recolored).
+   */
   function addPolygon(points: string[]): void {
     const id = crypto.randomUUID();
     graph.set(polygonCellId(id), { points } as PolygonRecord);
     graph.define(areaCellId(id), (): number => {
       const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
       return shoelaceArea(pts);
+    });
+    graph.define(polygonSelfIntersectingCellId(id), (): boolean => {
+      const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
+      return isSelfIntersecting(pts);
     });
     pushObject(graph, id);
   }
@@ -358,8 +373,9 @@ export function GeometryPanel() {
           const { points } = graph.get<PolygonRecord>(polygonCellId(id));
           const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
           // Same reasoning as length/radius/angle above.
-          graph.get<number>(areaCellId(id));
-          drawPolygon(ctx, pts);
+          const area = graph.get<number>(areaCellId(id));
+          const selfIntersecting = graph.get<boolean>(polygonSelfIntersectingCellId(id));
+          drawPolygon(ctx, pts, area, selfIntersecting);
         }
       }
     }
@@ -527,11 +543,19 @@ function drawAngle(ctx: CanvasRenderingContext2D, a: PointRecord, vertex: PointR
   ctx.restore();
 }
 
-/** An ordered vertex loop, closed back to the first point -- a distinct color from Line's/Circle's palette. */
-function drawPolygon(ctx: CanvasRenderingContext2D, points: PointRecord[]): void {
+/**
+ * An ordered vertex loop, closed back to the first point -- a distinct color
+ * from Line's/Circle's palette, switching to the degenerate warning color
+ * when the loop self-intersects (a bowtie/figure-eight vertex order), since
+ * the shoelace area isn't a meaningful "area" for such a shape. The area
+ * value labels the polygon's signed-area-weighted centroid, mirroring
+ * drawAngle's vertex label; when self-intersecting, the label says so
+ * explicitly rather than presenting the number as trustworthy.
+ */
+function drawPolygon(ctx: CanvasRenderingContext2D, points: PointRecord[], area: number, selfIntersecting: boolean): void {
   if (points.length < 2) return;
   ctx.save();
-  ctx.strokeStyle = "#0891b2";
+  ctx.strokeStyle = selfIntersecting ? DEGENERATE_COLOR : "#0891b2";
   ctx.lineWidth = 2;
   ctx.beginPath();
   const first = points[0] as PointRecord;
@@ -542,5 +566,12 @@ function drawPolygon(ctx: CanvasRenderingContext2D, points: PointRecord[]): void
   }
   ctx.closePath();
   ctx.stroke();
+  const centroid = polygonCentroid(points);
+  ctx.fillStyle = selfIntersecting ? DEGENERATE_COLOR : "#5b6b8c";
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const label = selfIntersecting ? `${area.toFixed(2)} (self-intersecting)` : area.toFixed(2);
+  ctx.fillText(label, toScreenX(centroid.x, VIEWPORT, WIDTH), toScreenY(centroid.y, VIEWPORT, HEIGHT));
   ctx.restore();
 }

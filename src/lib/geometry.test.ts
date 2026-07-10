@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { interiorAngleRadians, shoelaceArea } from "./geometry.ts";
+import { interiorAngleRadians, isSelfIntersecting, polygonCentroid, shoelaceArea } from "./geometry.ts";
 
 test("interiorAngleRadians reports 90 degrees for a right angle", () => {
   const a = { x: 1, y: 0 };
@@ -53,4 +53,87 @@ test("shoelaceArea is winding-order independent (abs value)", () => {
     { x: 1, y: 0 },
   ];
   assert.ok(Math.abs(shoelaceArea(clockwise) - 1) < 1e-9);
+});
+
+test("isSelfIntersecting is false for a simple square", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+  ];
+  assert.equal(isSelfIntersecting(square), false);
+});
+
+test("isSelfIntersecting is true for a bowtie ordering of the same square's corners", () => {
+  // Perimeter order would be BL, BR, TR, TL -- this crossed order (BL, BR,
+  // TL, TR) makes edges BR->TL and TR->BL cross in the middle.
+  const bowtie = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 1, y: 1 },
+  ];
+  assert.equal(isSelfIntersecting(bowtie), true);
+});
+
+test("isSelfIntersecting is false for a triangle (no non-adjacent edge pairs exist)", () => {
+  const triangle = [
+    { x: 0, y: 0 },
+    { x: 4, y: 0 },
+    { x: 0, y: 3 },
+  ];
+  assert.equal(isSelfIntersecting(triangle), false);
+});
+
+test("isSelfIntersecting is true for a pentagram (5 points on a circle visited in star order)", () => {
+  // Visiting every second point of a regular pentagon traces the classic
+  // five-pointed star, which self-intersects by construction.
+  const star = [0, 2, 4, 1, 3].map((k) => ({
+    x: Math.cos((2 * Math.PI * k) / 5),
+    y: Math.sin((2 * Math.PI * k) / 5),
+  }));
+  assert.equal(isSelfIntersecting(star), true);
+});
+
+test("polygonCentroid of the unit square is exactly (0.5, 0.5)", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+  ];
+  const c = polygonCentroid(square);
+  assert.ok(Math.abs(c.x - 0.5) < 1e-12);
+  assert.ok(Math.abs(c.y - 0.5) < 1e-12);
+});
+
+test("polygonCentroid of an L-shape is area-weighted, not the vertex average", () => {
+  // A 2x1 rectangle (area 2, centroid (1, 0.5)) plus a 1x1 square on top of
+  // its left half (area 1, centroid (0.5, 1.5)): true centroid is
+  // (2*1 + 1*0.5)/3 = (2*0.5 + 1*1.5)/3 = 2.5/3. The naive vertex average
+  // of these 6 corners is (1, 1) -- measurably different.
+  const lShape = [
+    { x: 0, y: 0 },
+    { x: 2, y: 0 },
+    { x: 2, y: 1 },
+    { x: 1, y: 1 },
+    { x: 1, y: 2 },
+    { x: 0, y: 2 },
+  ];
+  const c = polygonCentroid(lShape);
+  assert.ok(Math.abs(c.x - 2.5 / 3) < 1e-12);
+  assert.ok(Math.abs(c.y - 2.5 / 3) < 1e-12);
+  assert.ok(Math.abs(c.x - 1) > 0.1); // and it is NOT the vertex average
+});
+
+test("polygonCentroid falls back to the vertex average for a degenerate (collinear) polygon", () => {
+  const collinear = [
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+    { x: 2, y: 2 },
+  ];
+  const c = polygonCentroid(collinear);
+  assert.ok(Math.abs(c.x - 1) < 1e-12);
+  assert.ok(Math.abs(c.y - 1) < 1e-12);
 });
