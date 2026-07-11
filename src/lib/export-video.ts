@@ -139,6 +139,13 @@ function buildConstruct(data: ExportVideoInput, roots: { x: number; y: number }[
       xLength: 7,
       yLength: 6.4,
       axisConfig: { color: AXIS_COLOR },
+      // fontSize shrunk from ecmanim's 0.35 default -- at this export's
+      // SQUARE_HALF_SPAN=4 world-unit half-frame over a 640x640 render
+      // (~80px/unit), 0.35 crowds against the default 11-label-per-axis
+      // tick step above. color left unset so it inherits AXIS_COLOR from
+      // axisConfig (Axes merges axisConfig before xAxisConfig/yAxisConfig).
+      xAxisConfig: { includeNumbers: true, fontSize: 0.24 },
+      yAxisConfig: { includeNumbers: true, fontSize: 0.24 },
     });
     const elapsedTracker = new ValueTracker(0);
 

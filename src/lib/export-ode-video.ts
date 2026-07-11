@@ -91,6 +91,9 @@ function buildOdeConstruct(data: OdeExportInput) {
       xLength: 7,
       yLength: 6.4,
       axisConfig: { color: AXIS_COLOR },
+      // See export-video.ts's identical config for the fontSize rationale.
+      xAxisConfig: { includeNumbers: true, fontSize: 0.24 },
+      yAxisConfig: { includeNumbers: true, fontSize: 0.24 },
     });
     scene.add(axes);
 
