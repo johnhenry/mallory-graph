@@ -2,7 +2,7 @@ import { Rational, Symbolic, type DifferentiationStep, type Expr, type Path2D } 
 import { useEffect, useRef, useState, type FormEvent, type PointerEvent } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";
-import { cellIds, TIME_CELL, type CellIds } from "../lib/cell-ids.ts";
+import { cellIds, TIME_CELL } from "../lib/cell-ids.ts";
 import { resolveChatCommand, type ChatCommandContext } from "../lib/chat-commands.ts";
 import { getExportVideoJob, renderExportPreviewFrame, startExportVideoJob, type ExportVideoInput } from "../lib/export-video.ts";
 import { exprToLatex } from "../lib/expr-to-latex.ts";
@@ -14,9 +14,10 @@ import { resolveNaturalLanguageQuery } from "../lib/nl-query.ts";
 import { drawFilledArea, drawPath, drawPoint, drawRegionMask, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
-import { HIGHLIGHT_PRELUDE_SECONDS, interpolateKeyframes, timelineDuration, type Keyframe } from "../lib/timeline.ts";
+import { HIGHLIGHT_PRELUDE_SECONDS, timelineDuration, type Keyframe } from "../lib/timeline.ts";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CopyableTex } from "./CopyableTex.tsx";
+import { KeyframeSliderControl } from "./KeyframeSliderControl.tsx";
 import { TexSpan } from "./TexSpan.tsx";
 import { useCell } from "../lib/use-cell.ts";
 import { canvasEventPoint, toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
@@ -601,7 +602,7 @@ export function GraphCanvas({
       {freeVars.length > 0 && (
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", margin: "0.5rem 0" }}>
           {freeVars.map((name) => (
-            <SliderControl key={name} graph={graph} ids={ids} name={name} />
+            <KeyframeSliderControl key={name} graph={graph} ids={ids} name={name} />
           ))}
         </div>
       )}
@@ -811,91 +812,3 @@ export function GraphCanvas({
   );
 }
 
-function SliderControl({ graph, ids, name }: { graph: CellGraph; ids: CellIds; name: string }) {
-  const id = ids.param(name);
-  const trackId = ids.track(name);
-  const value = useCell<number>(graph, id) ?? defaultSliderRange(name).default;
-  const track = useCell<Keyframe[] | undefined>(graph, trackId);
-  const range = defaultSliderRange(name);
-  const animated = track != null && track.length > 0;
-
-  function toggleAnimated() {
-    if (animated) {
-      graph.set(id, value);
-      graph.set(trackId, undefined);
-    } else {
-      graph.set(trackId, [{ t: 0, value }, { t: 3, value: range.max }]);
-      graph.define(id, () => interpolateKeyframes(graph.get<Keyframe[]>(trackId), graph.get<number>(TIME_CELL)));
-    }
-  }
-
-  function updateKeyframe(i: number, patch: Partial<Keyframe>) {
-    if (!track) return;
-    const next = track.map((k, idx) => (idx === i ? { ...k, ...patch } : k)).sort((a, b) => a.t - b.t);
-    graph.set(trackId, next);
-  }
-
-  function addKeyframe() {
-    if (!track) return;
-    const lastT = track.length > 0 ? track[track.length - 1].t : 0;
-    graph.set(trackId, [...track, { t: lastT + 1, value: range.default }]);
-  }
-
-  function removeKeyframe(i: number) {
-    if (!track) return;
-    graph.set(trackId, track.filter((_, idx) => idx !== i));
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", fontSize: "0.85rem", border: "1px solid #eee", padding: "0.4rem" }}>
-      <label style={{ display: "flex", flexDirection: "column" }}>
-        {name} = {value.toFixed(2)}
-        <input
-          type="range"
-          min={range.min}
-          max={range.max}
-          step={range.step}
-          value={value}
-          disabled={animated}
-          onChange={(e) => graph.set(id, Number(e.target.value))}
-        />
-      </label>
-      <label>
-        <input type="checkbox" checked={animated} onChange={toggleAnimated} /> Animate
-      </label>
-      {animated && track && (
-        <div>
-          {track.map((k, i) => (
-            <div key={i} style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
-              <input
-                type="number"
-                aria-label={`keyframe ${i} time`}
-                value={k.t}
-                step={0.1}
-                style={{ width: "4ch" }}
-                onChange={(e) => updateKeyframe(i, { t: Number(e.target.value) })}
-              />
-              <span>s:</span>
-              <input
-                type="number"
-                aria-label={`keyframe ${i} value`}
-                value={k.value}
-                step={range.step}
-                style={{ width: "5ch" }}
-                onChange={(e) => updateKeyframe(i, { value: Number(e.target.value) })}
-              />
-              {track.length > 1 && (
-                <button type="button" onClick={() => removeKeyframe(i)}>
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
-          <button type="button" onClick={addKeyframe}>
-            + keyframe
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}

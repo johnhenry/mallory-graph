@@ -4,13 +4,15 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { useServerFn } from "@tanstack/react-start";
-import { cellIds3D, type CellIds3D } from "../lib/cell-ids.ts";
+import { cellIds3D, TIME_CELL } from "../lib/cell-ids.ts";
 import { startSurfaceExportJob } from "../lib/export-surface-video.ts";
 import { VideoExportControls } from "./VideoExportControls.tsx";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
+import { KeyframeSliderControl } from "./KeyframeSliderControl.tsx";
 import { meshToGeometry, meshToMaterial } from "../lib/mesh-to-geometry.ts";
 import { sampleSurface, type SurfaceDomain } from "../lib/sample-surface.ts";
+import { timelineDuration, type Keyframe } from "../lib/timeline.ts";
 import { useCell } from "../lib/use-cell.ts";
 
 const WIDTH = 600;
@@ -31,6 +33,8 @@ function useExpressionGraph3D(cellId: string, source: string, externalGraph?: Ce
   if (!ref.current) {
     const graph = externalGraph ?? new CellGraph();
     const ids = cellIds3D(cellId);
+
+    if (!graph.has(TIME_CELL)) graph.set(TIME_CELL, 0, { auxiliary: true });
 
     if (!graph.has(ids.expr)) {
       graph.set(ids.expr, source);
@@ -71,10 +75,14 @@ function useExpressionGraph3D(cellId: string, source: string, externalGraph?: Ce
         return lastGoodMesh;
       });
 
-      // No keyframe-animated params for 3D yet (Phase 11e scope is the
-      // surface render + orbit controls, not a 3D timeline UI) -- this pane
-      // just holds still if a sibling pane on a shared graph drives TIME_CELL.
-      graph.define(ids.timelineDuration, () => 0);
+      graph.define(
+        ids.timelineDuration,
+        () => {
+          const names = graph.get<string[]>(ids.freeVars);
+          return timelineDuration(names.map((name) => graph.get<Keyframe[] | undefined>(ids.track(name))));
+        },
+        { auxiliary: true },
+      );
     }
 
     ref.current = graph;
@@ -259,7 +267,7 @@ export function Graph3DCanvas({
       {freeVars.length > 0 && (
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", margin: "0.5rem 0" }}>
           {freeVars.map((name) => (
-            <Slider3DControl key={name} graph={graph} ids={ids} name={name} />
+            <KeyframeSliderControl key={name} graph={graph} ids={ids} name={name} />
           ))}
         </div>
       )}
@@ -271,38 +279,24 @@ export function Graph3DCanvas({
           clip of the same z = f(x, y). */}
       <VideoExportControls
         filenameStem="mallory-graph-surface"
-        start={(format, duration) =>
-          startSurfaceExportJobFn({
+        start={(format, duration) => {
+          const names = graph.get<string[]>(ids.freeVars);
+          const tracks: Record<string, Keyframe[] | undefined> = {};
+          for (const name of names) tracks[name] = graph.get<Keyframe[] | undefined>(ids.track(name));
+          return startSurfaceExportJobFn({
             data: {
               source: exprValue,
               params: graph.hasValue(ids.params) ? graph.get<Record<string, number>>(ids.params) : {},
+              tracks,
               xDomain: DOMAIN,
               yDomain: DOMAIN,
               duration,
               format,
             },
-          })
-        }
+          });
+        }}
       />
     </div>
   );
 }
 
-function Slider3DControl({ graph, ids, name }: { graph: CellGraph; ids: CellIds3D; name: string }) {
-  const id = ids.param(name);
-  const value = useCell<number>(graph, id) ?? defaultSliderRange(name).default;
-  const range = defaultSliderRange(name);
-  return (
-    <label style={{ display: "flex", flexDirection: "column", fontSize: "0.85rem" }}>
-      {name} = {value.toFixed(2)}
-      <input
-        type="range"
-        min={range.min}
-        max={range.max}
-        step={range.step}
-        value={value}
-        onChange={(e) => graph.set(id, Number(e.target.value))}
-      />
-    </label>
-  );
-}

@@ -1,9 +1,16 @@
 import { useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { cellIds, cellIds3D } from "../lib/cell-ids.ts";
 import { Graph3DCanvas } from "./Graph3DCanvas.tsx";
 import { GraphCanvas } from "./GraphCanvas.tsx";
 
 const CROSS_SECTION_RANGE = { min: -5, max: 5, step: 0.1 };
+
+// Deliberately not namespaced by cellId, same reasoning as LinkedGraphPanes's
+// own combinedDuration cell: one shared graph per linked view, and the 2D
+// pane's transport (the only transport in this view) should scrub across the
+// longer of the two panes' animations, not cut off at the 2D pane's own.
+const COMBINED_DURATION_CELL = "combined3DDuration";
 
 /**
  * A 2D pane and a 3D surface pane sharing one CellGraph -- the same
@@ -22,7 +29,15 @@ const CROSS_SECTION_RANGE = { min: -5, max: 5, step: 0.1 };
  */
 export function Linked3DView() {
   const graphRef = useRef<CellGraph | null>(null);
-  if (!graphRef.current) graphRef.current = new CellGraph();
+  if (!graphRef.current) {
+    const graph = new CellGraph();
+    const ids2D = cellIds("pane-2d");
+    const ids3D = cellIds3D("pane-3d");
+    graph.define(COMBINED_DURATION_CELL, () =>
+      Math.max(graph.get<number>(ids2D.timelineDuration), graph.get<number>(ids3D.timelineDuration)),
+    );
+    graphRef.current = graph;
+  }
   const graph = graphRef.current;
   const [crossSectionY, setCrossSectionY] = useState(0);
 
@@ -33,7 +48,7 @@ export function Linked3DView() {
             would otherwise floor each pane at its (fixed-pixel canvas)
             content size and defeat the canvas's own responsive shrinking. */}
         <div style={{ minWidth: 0 }}>
-          <GraphCanvas cellId="pane-2d" defaultSource="sin(x)" graph={graph} />
+          <GraphCanvas cellId="pane-2d" defaultSource="sin(x)" durationCellId={COMBINED_DURATION_CELL} graph={graph} />
         </div>
         <div style={{ minWidth: 0 }}>
           <Graph3DCanvas cellId="pane-3d" defaultSource="sin(x)*cos(y)" graph={graph} crossSectionY={crossSectionY} />
