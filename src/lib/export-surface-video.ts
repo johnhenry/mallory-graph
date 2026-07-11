@@ -10,17 +10,13 @@
  * animated here; the orbit is the core deliverable (see #3's own
  * "optional flourish" framing).
  *
- * Two ecmanim 0.2.0 landmines this file is built around:
- * - `render()` constructs its CanvasRenderer around `options.camera`
- *   BEFORE makeScene runs, so the ThreeDCamera a ThreeDScene installs on
- *   itself is never the camera the renderer actually projects through --
- *   orientation/zoom set inside construct() silently do nothing. The
- *   ready-made ThreeDCamera must be passed through RenderOptions (see
- *   renderExportToBuffer), which both the renderer and the scene then
- *   share (ThreeDScene keeps a camera that's already a ThreeDCamera).
- * - The camera carries its own background: the renderer only applies
- *   `options.background` when the camera has none, and ThreeDCamera's
- *   default is a truthy black -- so white goes in the camera config.
+ * `this.camera = new ThreeDCamera({...})` in the Scene subclass's own
+ * constructor is now the idiomatic, ecmanim-0.5.0-and-later pattern for a
+ * 3D export -- no external camera threading needed (see
+ * `export-render.ts`'s doc comment for the ecmanim-0.2.0 bug this used to
+ * work around, how 0.5.0 fixed the *projection* half of it, and why the
+ * camera's own `background` config field is still required explicitly
+ * despite that fix).
  *
  * A Scene *subclass* (not a bare construct function) is required for 3D:
  * makeScene instantiates a plain 2D Scene for bare functions; only a
@@ -82,6 +78,15 @@ async function runSurfaceExportJob(jobId: string, data: SurfaceExportInput) {
     const { xDomain, yDomain, duration } = data;
 
     class SurfaceExportScene extends ThreeDScene {
+      constructor() {
+        super();
+        this.camera = new ThreeDCamera({
+          phi: (65 * Math.PI) / 180,
+          theta: (-45 * Math.PI) / 180,
+          zoom: 0.75,
+          background: "#ffffff",
+        });
+      }
       override async construct() {
         const axes = new ThreeDAxes({
           xRange: [xDomain.min, xDomain.max, (xDomain.max - xDomain.min) / 10],
@@ -116,13 +121,7 @@ async function runSurfaceExportJob(jobId: string, data: SurfaceExportInput) {
       }
     }
 
-    const camera = new ThreeDCamera({
-      phi: (65 * Math.PI) / 180,
-      theta: (-45 * Math.PI) / 180,
-      zoom: 0.75,
-      background: "#ffffff",
-    });
-    completeExportJob(jobId, await renderExportToBuffer(SurfaceExportScene, data.format, camera));
+    completeExportJob(jobId, await renderExportToBuffer(SurfaceExportScene, data.format));
   } catch (e) {
     failExportJob(jobId, e);
   }
