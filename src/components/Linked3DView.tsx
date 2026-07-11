@@ -64,7 +64,13 @@ export function Linked3DView() {
           <GraphCanvas cellId="pane-2d" defaultSource="sin(x)" durationCellId={COMBINED_DURATION_CELL} graph={graph} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <Graph3DCanvas cellId="pane-3d" defaultSource="sin(x)*cos(y)" graph={graph} crossSectionY={crossSectionY} />
+          <Graph3DCanvas
+            cellId="pane-3d"
+            defaultSource="sin(x)*cos(y)"
+            graph={graph}
+            crossSectionY={crossSectionY}
+            showTransport={false}
+          />
         </div>
       </div>
       <label style={{ display: "block", margin: "0.5rem 0", fontSize: "0.9rem" }}>

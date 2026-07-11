@@ -13,7 +13,9 @@ import { KeyframeSliderControl } from "./KeyframeSliderControl.tsx";
 import { meshToGeometry, meshToMaterial } from "../lib/mesh-to-geometry.ts";
 import { sampleSurface, type SurfaceDomain } from "../lib/sample-surface.ts";
 import { timelineDuration, type Keyframe } from "../lib/timeline.ts";
+import { TransportControls } from "./TransportControls.tsx";
 import { useCell } from "../lib/use-cell.ts";
+import { useTimelinePlayback } from "../lib/use-timeline-playback.ts";
 
 const WIDTH = 600;
 const HEIGHT = 600;
@@ -99,6 +101,14 @@ export interface Graph3DCanvasProps {
   graph?: CellGraph;
   /** When set, highlights the surface's y=crossSectionY cross-section as a red line (Linked3DView's cross-pane link). */
   crossSectionY?: number;
+  /**
+   * Hide the play/pause/loop/speed transport -- for a secondary pane in a
+   * linked view where a sibling's transport already drives the shared
+   * TIME_CELL (see GraphCanvas's identically-named prop). Defaults to true
+   * (standalone use, e.g. this component with no linked 2D sibling, has no
+   * other way to play back an animated free variable -- mallory-graph#8).
+   */
+  showTransport?: boolean;
 }
 
 export function Graph3DCanvas({
@@ -106,13 +116,20 @@ export function Graph3DCanvas({
   defaultSource = "x^2-y^2",
   graph: externalGraph,
   crossSectionY,
+  showTransport = true,
 }: Graph3DCanvasProps = {}) {
   const ids = cellIds3D(cellId);
   const graph = useExpressionGraph3D(cellId, defaultSource, externalGraph);
   const mesh = useCell<Mesh[] | null>(graph, ids.mesh);
   const freeVars = useCell<string[]>(graph, ids.freeVars);
   const exprValue = useCell<string>(graph, ids.expr);
+  const time = useCell<number>(graph, TIME_CELL);
+  const duration = useCell<number>(graph, ids.timelineDuration);
   const [source, setSource] = useState(defaultSource);
+  const [playing, setPlaying] = useState(false);
+  const [loop, setLoop] = useState(true);
+  const [speed, setSpeed] = useState(1);
+  useTimelinePlayback(graph, playing, loop, speed, duration, setPlaying);
   const startSurfaceExportJobFn = useServerFn(startSurfaceExportJob);
   const containerRef = useRef<HTMLDivElement>(null);
   const surfaceGroupRef = useRef<THREE.Group | null>(null);
@@ -270,6 +287,19 @@ export function Graph3DCanvas({
             <KeyframeSliderControl key={name} graph={graph} ids={ids} name={name} />
           ))}
         </div>
+      )}
+      {showTransport && (
+        <TransportControls
+          graph={graph}
+          time={time}
+          duration={duration}
+          playing={playing}
+          setPlaying={setPlaying}
+          loop={loop}
+          setLoop={setLoop}
+          speed={speed}
+          setSpeed={setSpeed}
+        />
       )}
       <div ref={containerRef} style={{ maxWidth: WIDTH, border: "1px solid #ccc" }} />
       <p style={{ fontSize: "0.85rem", color: "#666" }}>Drag to orbit, scroll to zoom.</p>

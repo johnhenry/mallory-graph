@@ -15,10 +15,12 @@ import { drawFilledArea, drawPath, drawPoint, drawRegionMask, drawScatter, type 
 import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
 import { HIGHLIGHT_PRELUDE_SECONDS, timelineDuration, type Keyframe } from "../lib/timeline.ts";
+import { useTimelinePlayback } from "../lib/use-timeline-playback.ts";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CopyableTex } from "./CopyableTex.tsx";
 import { KeyframeSliderControl } from "./KeyframeSliderControl.tsx";
 import { TexSpan } from "./TexSpan.tsx";
+import { TransportControls } from "./TransportControls.tsx";
 import { useCell } from "../lib/use-cell.ts";
 import { canvasEventPoint, toDataX, toScreenX, toScreenY } from "../lib/viewport.ts";
 
@@ -520,29 +522,7 @@ export function GraphCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, viewport, mode, syncUrl]);
 
-  // Timeline playback: advances TIME_CELL by real elapsed time (scaled by
-  // speed) every frame, looping back to 0 at `duration` or stopping there.
-  useEffect(() => {
-    if (!playing || duration <= 0) return;
-    let raf = 0;
-    let last = performance.now();
-    function tick(now: number) {
-      const dt = ((now - last) / 1000) * speed;
-      last = now;
-      let next = graph.get<number>(TIME_CELL) + dt;
-      if (next >= duration) {
-        if (loop) next %= duration;
-        else {
-          next = duration;
-          setPlaying(false);
-        }
-      }
-      graph.set(TIME_CELL, next);
-      raf = requestAnimationFrame(tick);
-    }
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, loop, speed, duration, graph]);
+  useTimelinePlayback(graph, playing, loop, speed, duration, setPlaying);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -627,39 +607,21 @@ export function GraphCanvas({
           </ul>
         )}
       </form>
+      {showTransport && (
+        <TransportControls
+          graph={graph}
+          time={time}
+          duration={duration}
+          playing={playing}
+          setPlaying={setPlaying}
+          loop={loop}
+          setLoop={setLoop}
+          speed={speed}
+          setSpeed={setSpeed}
+        />
+      )}
       {showTransport && duration > 0 && (
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", margin: "0.5rem 0" }}>
-          <button type="button" onClick={() => setPlaying((p) => !p)}>
-            {playing ? "Pause" : "Play"}
-          </button>
-          <label>
-            <input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} /> Loop
-          </label>
-          <label>
-            Speed{" "}
-            <input
-              type="number"
-              value={speed}
-              min={0.1}
-              step={0.1}
-              style={{ width: "4ch" }}
-              onChange={(e) => setSpeed(Number(e.target.value))}
-            />
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={duration}
-            step={0.01}
-            value={Math.min(time, duration)}
-            onChange={(e) => {
-              setPlaying(false);
-              graph.set(TIME_CELL, Number(e.target.value));
-            }}
-          />
-          <span>
-            {time.toFixed(2)}s / {duration.toFixed(2)}s
-          </span>
           <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as "mp4" | "gif")}>
             <option value="mp4">MP4</option>
             <option value="gif">GIF</option>
