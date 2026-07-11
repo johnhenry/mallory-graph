@@ -32,11 +32,22 @@
  * -- confirmed in ecmanim's own source, no restructuring needed here). The
  * plain orbit-only (no animated params) path is unchanged: `setFunc` is
  * never called, so there's zero added per-frame cost for the common case.
+ *
+ * Scrub-preview (mallory-graph#9): `buildSurfaceScene` is the single scene
+ * factory shared by the full render (`runSurfaceExportJob`) and the
+ * single-frame preview (`renderSurfacePreviewFrame`), mirroring
+ * export-video.ts's `buildConstruct`/`renderExportPreviewFrame` split -- so
+ * the preview can never drift from what the real export produces.
+ * `renderStill`'s own doc comment (ecmanim/src/node.ts) confirms it accepts
+ * a Scene subclass directly, same as `render()`, not just a bare construct
+ * function -- no bare-function wrapper needed for the 3D case despite
+ * `makeScene` otherwise requiring a ThreeDScene subclass for depth sorting
+ * and ambient camera rotation.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { Symbolic } from "mallory-math";
-import { Surface, ThreeDAxes, ThreeDCamera, ThreeDScene } from "ecmanim/node";
-import { completeExportJob, createExportJob, failExportJob } from "./export-jobs.ts";
+import { renderStill, Surface, ThreeDAxes, ThreeDCamera, ThreeDScene } from "ecmanim/node";
+import { completeExportJob, createExportJob, failExportJob, type ExportVideoResult } from "./export-jobs.ts";
 import { renderExportToBuffer } from "./export-render.ts";
 import { preprocessImplicitMultiplication } from "./implicit-mult.ts";
 import { interpolateKeyframes, type Keyframe } from "./timeline.ts";
@@ -135,79 +146,118 @@ function animatedSurfaceZRange(zAt: (t: number, x: number, y: number) => number,
   return padZExtent(zMin, zMax);
 }
 
+/**
+ * The shared scene factory for both the full render and the single-frame
+ * preview -- one factory so the preview can't drift out of sync with what
+ * the real export produces (see this file's own doc comment).
+ */
+function buildSurfaceScene(data: SurfaceExportInput) {
+  const compiled = Symbolic.compile(preprocessImplicitMultiplication(data.source));
+  const hasAnimatedParams = Object.values(data.tracks).some((track) => track != null && track.length > 0);
+  const zAt = (t: number, x: number, y: number): number => {
+    const env: Record<string, number> = { ...data.params, x, y };
+    for (const [name, track] of Object.entries(data.tracks)) {
+      if (track) env[name] = interpolateKeyframes(track, t);
+    }
+    return compiled(env);
+  };
+  const [zMin, zMax] = hasAnimatedParams
+    ? animatedSurfaceZRange(zAt, data)
+    : surfaceZRange((x, y) => zAt(0, x, y), data);
+  const { xDomain, yDomain, duration } = data;
+
+  return class SurfaceExportScene extends ThreeDScene {
+    constructor() {
+      super();
+      this.camera = new ThreeDCamera({
+        phi: (65 * Math.PI) / 180,
+        theta: (-45 * Math.PI) / 180,
+        zoom: 0.75,
+        background: "#ffffff",
+      });
+    }
+    override async construct() {
+      const axes = new ThreeDAxes({
+        xRange: [xDomain.min, xDomain.max, (xDomain.max - xDomain.min) / 10],
+        yRange: [yDomain.min, yDomain.max, (yDomain.max - yDomain.min) / 10],
+        zRange: [zMin, zMax, (zMax - zMin) / 4],
+        xLength: 6,
+        yLength: 6,
+        zLength: 3,
+      });
+      // A pole/hole still has to return *a* point (Surface tessellates a
+      // full grid); clamp it to the axes' z extent so one singular cell
+      // doesn't stretch the whole tessellation off-frame.
+      const surfaceFuncAt = (t: number) => (u: number, v: number) => {
+        const z = zAt(t, u, v);
+        return axes.c2p(u, v, Number.isFinite(z) ? Math.min(Math.max(z, zMin), zMax) : zMin);
+      };
+      const surface = new Surface(surfaceFuncAt(0), {
+        uRange: [xDomain.min, xDomain.max],
+        vRange: [yDomain.min, yDomain.max],
+        resolution: hasAnimatedParams ? ANIMATED_SURFACE_RESOLUTION : SURFACE_RESOLUTION,
+        checkerboardColors: SURFACE_COLORS,
+        fillOpacity: 0.85,
+      });
+      this.enableDepthSorting(true);
+      this.add(axes, surface);
+      if (hasAnimatedParams) {
+        let elapsed = 0;
+        surface.addUpdater(
+          (_m, dt) => {
+            elapsed += dt;
+            surface.setFunc(surfaceFuncAt(elapsed));
+          },
+          { hashExtra: () => String(elapsed) },
+        );
+      }
+      // One full orbit over the clip: rate is radians/second.
+      this.beginAmbientCameraRotation({ rate: (2 * Math.PI) / duration });
+      await this.wait(duration);
+      this.stopAmbientCameraRotation();
+    }
+  };
+}
+
 async function runSurfaceExportJob(jobId: string, data: SurfaceExportInput) {
   try {
-    const compiled = Symbolic.compile(preprocessImplicitMultiplication(data.source));
-    const hasAnimatedParams = Object.values(data.tracks).some((track) => track != null && track.length > 0);
-    const zAt = (t: number, x: number, y: number): number => {
-      const env: Record<string, number> = { ...data.params, x, y };
-      for (const [name, track] of Object.entries(data.tracks)) {
-        if (track) env[name] = interpolateKeyframes(track, t);
-      }
-      return compiled(env);
-    };
-    const [zMin, zMax] = hasAnimatedParams
-      ? animatedSurfaceZRange(zAt, data)
-      : surfaceZRange((x, y) => zAt(0, x, y), data);
-    const { xDomain, yDomain, duration } = data;
-
-    class SurfaceExportScene extends ThreeDScene {
-      constructor() {
-        super();
-        this.camera = new ThreeDCamera({
-          phi: (65 * Math.PI) / 180,
-          theta: (-45 * Math.PI) / 180,
-          zoom: 0.75,
-          background: "#ffffff",
-        });
-      }
-      override async construct() {
-        const axes = new ThreeDAxes({
-          xRange: [xDomain.min, xDomain.max, (xDomain.max - xDomain.min) / 10],
-          yRange: [yDomain.min, yDomain.max, (yDomain.max - yDomain.min) / 10],
-          zRange: [zMin, zMax, (zMax - zMin) / 4],
-          xLength: 6,
-          yLength: 6,
-          zLength: 3,
-        });
-        // A pole/hole still has to return *a* point (Surface tessellates a
-        // full grid); clamp it to the axes' z extent so one singular cell
-        // doesn't stretch the whole tessellation off-frame.
-        const surfaceFuncAt = (t: number) => (u: number, v: number) => {
-          const z = zAt(t, u, v);
-          return axes.c2p(u, v, Number.isFinite(z) ? Math.min(Math.max(z, zMin), zMax) : zMin);
-        };
-        const surface = new Surface(surfaceFuncAt(0), {
-          uRange: [xDomain.min, xDomain.max],
-          vRange: [yDomain.min, yDomain.max],
-          resolution: hasAnimatedParams ? ANIMATED_SURFACE_RESOLUTION : SURFACE_RESOLUTION,
-          checkerboardColors: SURFACE_COLORS,
-          fillOpacity: 0.85,
-        });
-        this.enableDepthSorting(true);
-        this.add(axes, surface);
-        if (hasAnimatedParams) {
-          let elapsed = 0;
-          surface.addUpdater(
-            (_m, dt) => {
-              elapsed += dt;
-              surface.setFunc(surfaceFuncAt(elapsed));
-            },
-            { hashExtra: () => String(elapsed) },
-          );
-        }
-        // One full orbit over the clip: rate is radians/second.
-        this.beginAmbientCameraRotation({ rate: (2 * Math.PI) / duration });
-        await this.wait(duration);
-        this.stopAmbientCameraRotation();
-      }
-    }
-
-    completeExportJob(jobId, await renderExportToBuffer(SurfaceExportScene, data.format));
+    completeExportJob(jobId, await renderExportToBuffer(buildSurfaceScene(data), data.format));
   } catch (e) {
     failExportJob(jobId, e);
   }
 }
+
+/**
+ * One PNG frame of the surface export at `time` seconds, for a scrub
+ * preview -- mirrors export-video.ts's `renderExportPreviewFrame`
+ * (mallory-graph#9). Rendered at half the export's resolution (320x320 vs
+ * 640x640) since it's a transient UI aid, not the deliverable.
+ */
+export const renderSurfacePreviewFrame = createServerFn({ method: "POST" })
+  .validator((data: SurfaceExportInput & { time: number }) => data)
+  .handler(async ({ data }): Promise<ExportVideoResult> => {
+    const scene = buildSurfaceScene(data);
+
+    const { promises: fs } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mallory-graph-surface-preview-"));
+    const outPath = path.join(dir, "preview.png");
+    try {
+      await renderStill(scene, {
+        output: outPath,
+        time: Math.max(0, data.time),
+        pixelWidth: 320,
+        pixelHeight: 320,
+        background: "#ffffff",
+        verbose: false,
+      });
+      const buffer = await fs.readFile(outPath);
+      return { data: buffer.toString("base64"), mimeType: "image/png" };
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
 
 export const startSurfaceExportJob = createServerFn({ method: "POST" })
   .validator((data: SurfaceExportInput) => data)

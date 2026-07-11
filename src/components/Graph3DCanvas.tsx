@@ -5,7 +5,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { useServerFn } from "@tanstack/react-start";
 import { cellIds3D, TIME_CELL } from "../lib/cell-ids.ts";
-import { startSurfaceExportJob } from "../lib/export-surface-video.ts";
+import { renderSurfacePreviewFrame, startSurfaceExportJob } from "../lib/export-surface-video.ts";
+import { ExportPreviewScrubber } from "./ExportPreviewScrubber.tsx";
 import { VideoExportControls } from "./VideoExportControls.tsx";
 import { collectFreeVars, defaultSliderRange } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
@@ -131,9 +132,30 @@ export function Graph3DCanvas({
   const [speed, setSpeed] = useState(1);
   useTimelinePlayback(graph, playing, loop, speed, duration, setPlaying);
   const startSurfaceExportJobFn = useServerFn(startSurfaceExportJob);
+  const renderSurfacePreviewFrameFn = useServerFn(renderSurfacePreviewFrame);
+  // Lifted out of VideoExportControls (as a controlled prop) so the preview
+  // scrubber below can size its range to the same clip length the Export
+  // button will actually render -- see VideoExportControls's own doc
+  // comment on this prop (mallory-graph#9).
+  const [exportDuration, setExportDuration] = useState(4);
   const containerRef = useRef<HTMLDivElement>(null);
   const surfaceGroupRef = useRef<THREE.Group | null>(null);
   const highlightGroupRef = useRef<THREE.Group | null>(null);
+
+  /** The export payload, shared by the full render job and the scrub preview so they can't drift apart. */
+  function buildSurfaceExportInput(): { source: string; params: Record<string, number>; tracks: Record<string, Keyframe[] | undefined>; xDomain: SurfaceDomain; yDomain: SurfaceDomain; duration: number } {
+    const names = graph.get<string[]>(ids.freeVars);
+    const tracks: Record<string, Keyframe[] | undefined> = {};
+    for (const name of names) tracks[name] = graph.get<Keyframe[] | undefined>(ids.track(name));
+    return {
+      source: exprValue,
+      params: graph.hasValue(ids.params) ? graph.get<Record<string, number>>(ids.params) : {},
+      tracks,
+      xDomain: DOMAIN,
+      yDomain: DOMAIN,
+      duration: exportDuration,
+    };
+  }
 
   // Same reasoning as GraphCanvas: keeps the input box in sync with `ids.expr`
   // regardless of what wrote it (chat, URL hydration, a linked sibling pane).
@@ -309,21 +331,22 @@ export function Graph3DCanvas({
           clip of the same z = f(x, y). */}
       <VideoExportControls
         filenameStem="mallory-graph-surface"
-        start={(format, duration) => {
-          const names = graph.get<string[]>(ids.freeVars);
-          const tracks: Record<string, Keyframe[] | undefined> = {};
-          for (const name of names) tracks[name] = graph.get<Keyframe[] | undefined>(ids.track(name));
-          return startSurfaceExportJobFn({
-            data: {
-              source: exprValue,
-              params: graph.hasValue(ids.params) ? graph.get<Record<string, number>>(ids.params) : {},
-              tracks,
-              xDomain: DOMAIN,
-              yDomain: DOMAIN,
-              duration,
-              format,
-            },
-          });
+        duration={exportDuration}
+        onDurationChange={setExportDuration}
+        start={(format) =>
+          startSurfaceExportJobFn({
+            data: { ...buildSurfaceExportInput(), format },
+          })
+        }
+      />
+      {/* Scrub preview (mallory-graph#9): shares buildSurfaceExportInput with
+          the Export button above, so it can never drift from the real
+          render -- mirrors GraphCanvas's 2D preview slider. */}
+      <ExportPreviewScrubber
+        maxTime={exportDuration}
+        fetchFrame={async (time) => {
+          const frame = await renderSurfacePreviewFrameFn({ data: { ...buildSurfaceExportInput(), format: "mp4", time } });
+          return frame;
         }}
       />
     </div>

@@ -8,6 +8,17 @@ export interface VideoExportControlsProps {
   /** Download filename stem (".mp4"/".gif" appended per format). */
   filenameStem: string;
   defaultDuration?: number;
+  /**
+   * Controlled duration -- when provided (with `onDurationChange`), the
+   * caller owns this value instead of this component managing it
+   * internally. Graph3DCanvas's scrub-preview (mallory-graph#9) needs to
+   * read the same duration the Export button will use, to size its preview
+   * slider's range to match; OdePanel (this component's other consumer)
+   * has no such need and leaves both props unset, falling back to the
+   * original internally-managed behavior unchanged.
+   */
+  duration?: number;
+  onDurationChange?: (duration: number) => void;
 }
 
 /**
@@ -19,9 +30,17 @@ export interface VideoExportControlsProps {
  * Polling goes through export-video.ts's getExportVideoJob -- one shared
  * job store/poll endpoint for every export path.
  */
-export function VideoExportControls({ start, filenameStem, defaultDuration = 4 }: VideoExportControlsProps) {
+export function VideoExportControls({
+  start,
+  filenameStem,
+  defaultDuration = 4,
+  duration: controlledDuration,
+  onDurationChange,
+}: VideoExportControlsProps) {
   const [format, setFormat] = useState<"mp4" | "gif">("mp4");
-  const [duration, setDuration] = useState(defaultDuration);
+  const [internalDuration, setInternalDuration] = useState(defaultDuration);
+  const duration = controlledDuration ?? internalDuration;
+  const setDuration = onDurationChange ?? setInternalDuration;
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const getExportVideoJobFn = useServerFn(getExportVideoJob);
