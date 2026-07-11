@@ -224,3 +224,29 @@ test("get() on a deleted id re-creates an empty record with 'never existed' sema
   assert.equal(g.get("a"), undefined);
   assert.equal(g.hasValue("a"), false);
 });
+
+test("a compute that reads a sibling id before it's ever been set/defined sees undefined, then recomputes once that sibling is later defined (the mallory-graph#10 pattern)", () => {
+  const g = new CellGraph();
+  // Mirrors LinkedGraphPanes/Linked3DView's combinedDuration: defined before
+  // either "pane" has mounted and defined its own timelineDuration cell.
+  g.define("combined", () => {
+    const a = g.get<number>("pane-a-duration");
+    const b = g.get<number>("pane-b-duration");
+    return Math.max(Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0);
+  });
+  // First read, before either pane exists: get() on a never-set id returns
+  // undefined, not NaN -- the Number.isFinite guard is what keeps the
+  // compute's own result a real number despite that.
+  assert.equal(g.get("combined"), 0);
+
+  // "pane-a" mounts and defines its own duration cell with a real value --
+  // the dependency edge recorded during the first read above (get() on a
+  // not-yet-existing id still registers the edge) means this define() call
+  // marks "combined" dirty and notifies it, without "combined" having to be
+  // re-read to pick up the change.
+  let notified = 0;
+  g.subscribe("combined", () => notified++);
+  g.define("pane-a-duration", () => 5);
+  assert.equal(notified, 1);
+  assert.equal(g.get("combined"), 5);
+});

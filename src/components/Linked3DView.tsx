@@ -10,6 +10,17 @@ const CROSS_SECTION_RANGE = { min: -5, max: 5, step: 0.1 };
 // own combinedDuration cell: one shared graph per linked view, and the 2D
 // pane's transport (the only transport in this view) should scrub across the
 // longer of the two panes' animations, not cut off at the 2D pane's own.
+//
+// The compute below is defined here, before either child pane has rendered
+// (and thus before either pane's own `timelineDuration` cell exists) -- its
+// very first read sees `undefined` for whichever pane hasn't mounted yet
+// (the 3D pane renders after the 2D one in this tree), so a bare
+// `Math.max(0, undefined)` would momentarily be `NaN` until the 3D pane
+// mounts and the corrected `0` propagates through. That transient NaN-then-0
+// flip is exactly what tripped React's "getServerSnapshot should be cached"
+// hydration warning (mallory-graph#10) -- `Number.isFinite` below guards
+// against it so the very first read already settles on the value the later,
+// fully-mounted recompute would produce.
 const COMBINED_DURATION_CELL = "combined3DDuration";
 
 /**
@@ -33,9 +44,11 @@ export function Linked3DView() {
     const graph = new CellGraph();
     const ids2D = cellIds("pane-2d");
     const ids3D = cellIds3D("pane-3d");
-    graph.define(COMBINED_DURATION_CELL, () =>
-      Math.max(graph.get<number>(ids2D.timelineDuration), graph.get<number>(ids3D.timelineDuration)),
-    );
+    graph.define(COMBINED_DURATION_CELL, () => {
+      const a = graph.get<number>(ids2D.timelineDuration);
+      const b = graph.get<number>(ids3D.timelineDuration);
+      return Math.max(Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0);
+    });
     graphRef.current = graph;
   }
   const graph = graphRef.current;

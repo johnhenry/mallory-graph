@@ -34,7 +34,14 @@ const COMBINED_DURATION_CELL = "combinedDuration";
  * cell exists yet: `CellGraph.get()` on an undefined id still registers the
  * dependency edge, and `useSyncExternalStore`'s subscribe-time consistency
  * check catches the resulting dirty flag and re-renders once both panes have
- * mounted and defined their own duration cells.
+ * mounted and defined their own duration cells. That first read, though,
+ * sees `undefined` for whichever pane hasn't mounted yet (only pane-a has,
+ * at this point in pane-a's own render) -- `Math.max(0, undefined)` is
+ * `NaN`, a real (if momentary) wrong value, not just a cosmetic quirk: it's
+ * exactly what trips React's "getServerSnapshot should be cached" hydration
+ * warning once the corrected `0` lands a moment later (mallory-graph#10).
+ * `Number.isFinite` guards each side so the first read already settles on
+ * the same `0` the later, fully-mounted recompute would produce.
  */
 export function LinkedGraphPanes() {
   const graphRef = useRef<CellGraph | null>(null);
@@ -42,7 +49,11 @@ export function LinkedGraphPanes() {
     const graph = new CellGraph();
     const idsA = cellIds(PANE_IDS[0]);
     const idsB = cellIds(PANE_IDS[1]);
-    graph.define(COMBINED_DURATION_CELL, () => Math.max(graph.get<number>(idsA.timelineDuration), graph.get<number>(idsB.timelineDuration)));
+    graph.define(COMBINED_DURATION_CELL, () => {
+      const a = graph.get<number>(idsA.timelineDuration);
+      const b = graph.get<number>(idsB.timelineDuration);
+      return Math.max(Number.isFinite(a) ? a : 0, Number.isFinite(b) ? b : 0);
+    });
     graphRef.current = graph;
   }
   const graph = graphRef.current;
