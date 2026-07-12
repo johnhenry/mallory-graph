@@ -201,6 +201,20 @@ body:has(.app-shell) {
 .app-main {
   padding: 1.6rem 2.2rem 3rem;
   max-width: 980px;
+  /* Grid items default to min-width:auto, meaning they refuse to shrink
+     below their content's own preferred width -- a page with a hard,
+     non-shrinking minimum inside it (e.g. Linked3DView's fixed 600px 3D
+     canvas container) then forces .app-main past its actual grid-column
+     width, blowing the whole page out past the viewport. Since html/body
+     both set overflow-x:hidden (so no *legitimate* page ever grows an
+     accidental horizontal scrollbar), that overflow was silently clipped
+     and unreachable rather than scrollable -- reported as "impossible to
+     scroll right" on 3D & Surfaces specifically, since it's the one page
+     whose content has a wide-enough non-shrinking minimum to trip this.
+     min-width:0 lets .app-main shrink to its actual grid track/viewport
+     width instead, so the max-width:100% canvas rule and every other
+     shrink-friendly child can do their job. */
+  min-width: 0;
 }
 .page-eyebrow {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -292,6 +306,22 @@ body:has(.app-shell) {
 @media (max-width: 720px) {
   .app-shell {
     grid-template-columns: 1fr;
+    /* At this width .sidebar and .app-main split into two separate grid
+       rows (desktop keeps them side by side in one row, where stretching
+       both to fill .app-shell's min-height:100vh is exactly the desired
+       "sidebar spans the full page" look). Rows default to auto-sized, and
+       grid's align-content:normal computes as stretch -- so any leftover
+       space between the two rows' natural content height and 100vh was
+       being split *evenly* across both auto rows, inflating .sidebar's row
+       by the same absolute amount as .app-main's. Since .sidebar's own
+       content is short (~85px), that stretch bonus nearly doubled its
+       height on any page whose .app-main content was itself short (Calculator,
+       Geometry, Gallery) -- reported as the header looking "extra tall" on
+       exactly those pages and normal everywhere else, where .app-main's own
+       content already exceeds 100vh and leaves nothing to distribute.
+       grid-template-rows: auto 1fr pins .sidebar's row to its actual content
+       size and hands 100% of any leftover space to .app-main's row instead. */
+    grid-template-rows: auto 1fr;
   }
   .sidebar {
     flex-direction: row;
