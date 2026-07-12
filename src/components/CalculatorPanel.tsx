@@ -5,6 +5,7 @@ import {
   type CalculatorMode,
   type CalculatorState,
 } from "../lib/calculator-eval.ts";
+import { useModelContextTool } from "../hooks/use-model-context-tool.ts";
 
 const STORAGE_KEY = "mallory-graph:calculator";
 
@@ -62,6 +63,62 @@ export function CalculatorPanel() {
   }
 
   const variableNames = Object.keys(state.variables);
+
+  // Wraps the same submitCalculatorLine the Enter key uses -- an agent's
+  // evaluation is indistinguishable from one typed in the UI, including
+  // being appended to the same persisted history.
+  useModelContextTool({
+    name: "calculator_evaluate",
+    description: 'Evaluate an expression, or "name = expr" to save a value for later expressions to reference. Uses the calculator\'s current mode (Float/Exact/GF(n)).',
+    inputSchema: {
+      type: "object",
+      properties: {
+        expression: { type: "string", description: 'e.g. "12 * (4 + 1/3)" or "r = sqrt(2)"' },
+      },
+      required: ["expression"],
+    },
+    // Reads `state` directly and computes `next` before calling `setState`,
+    // rather than extracting values from inside a setState *updater*
+    // function -- a WebMCP tool's `execute` runs outside any React event
+    // handler, so (confirmed live: state persisted correctly to
+    // localStorage, but a value captured *inside* the updater read back as
+    // still-undefined immediately after the setState call) the updater
+    // isn't guaranteed to run synchronously in that context the way it does
+    // from a DOM event handler. Computing `next` up front sidesteps the
+    // question entirely.
+    handler: (input: Record<string, unknown>) => {
+      const expression = String(input.expression ?? "");
+      const next = submitCalculatorLine(expression, state, mode, modulus);
+      const entry = next.history[next.history.length - 1];
+      if (!entry) throw new Error("Empty expression.");
+      setState(next);
+      if (entry.isError) throw new Error(entry.display);
+      return { result: entry.display, isAssignment: entry.isAssignment, variables: next.variables };
+    },
+  });
+
+  useModelContextTool({
+    name: "calculator_set_mode",
+    description: 'Set the calculator\'s arithmetic mode: "float", "exact" (fractions), or a finite structure Z/nZ via modulus (2, 5, 7, or 11).',
+    inputSchema: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["float", "exact"], description: 'Ignored when modulus is set.' },
+        modulus: { type: ["number", "null"], description: "One of 2, 5, 7, 11 for Z/nZ, or null (or omit) for real numbers." },
+      },
+    },
+    handler: (input: Record<string, unknown>) => {
+      if (input.modulus !== undefined && input.modulus !== null) {
+        const m = Number(input.modulus);
+        if (![2, 5, 7, 11].includes(m)) throw new Error("modulus must be one of 2, 5, 7, 11.");
+        setModulus(m);
+      } else if (input.modulus === null) {
+        setModulus(null);
+      }
+      if (input.mode === "float" || input.mode === "exact") setMode(input.mode);
+      return { ok: true };
+    },
+  });
 
   return (
     <div>

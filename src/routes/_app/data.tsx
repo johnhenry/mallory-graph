@@ -17,6 +17,7 @@ function DataPage() {
         <p className="lede">Regression, statistics, and equation systems.</p>
       </div>
       <CategoryTabs
+        prefix="data"
         tabs={[
           { label: "Regression", render: () => <RegressionPanel /> },
           { label: "Statistics", render: () => <StatisticsPanel /> },

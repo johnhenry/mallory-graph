@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsSystem } from "../lib/cell-ids.ts";
 import { equationToImplicitZero } from "../lib/equation-to-zero.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { useCell } from "../lib/use-cell.ts";
 
@@ -74,6 +75,7 @@ export interface SystemSolverPanelProps {
 /** N equations in N variables -- Symbolic.solveSystem itself is already N-safe; this just adds add/remove-row UI on top. */
 export function SystemSolverPanel({ cellId = "system-1" }: SystemSolverPanelProps = {}) {
   const graph = useSystemGraph(cellId);
+  useCellGraphTools("data_systems", graph);
   const ids = cellIdsSystem(cellId);
   const equations = useCell<string[]>(graph, ids.equations);
   const variablesText = useCell<string>(graph, ids.variables);

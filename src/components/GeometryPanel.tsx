@@ -2,6 +2,8 @@ import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { interiorAngleRadians, isSelfIntersecting, polygonCentroid, shoelaceArea } from "../lib/geometry.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
+import { useModelContextTool } from "../hooks/use-model-context-tool.ts";
 import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY, type Viewport } from "../lib/viewport.ts";
 
 const WIDTH = 500;
@@ -120,6 +122,8 @@ export function GeometryPanel() {
   const [factorInput, setFactorInput] = useState("2");
   const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
 
+  useCellGraphTools("geometry", graph);
+
   function addPoint(x: number, y: number): string {
     const id = crypto.randomUUID();
     graph.set(pointCellId(id), { x, y });
@@ -235,6 +239,138 @@ export function GeometryPanel() {
     });
     pushObject(graph, id);
   }
+
+  // One WebMCP tool per construction, each a thin wrapper over the function
+  // above -- these already take data coordinates/point ids directly (not
+  // pixel positions or pointer events), so there's no new logic here, just
+  // registration (mallory-graph's WebMCP pass). Every add* function returns
+  // (or, for the void ones, is immediately followed by reading) the new
+  // object's id, so an agent can chain calls: add two points, then a line
+  // between the returned ids.
+  useModelContextTool({
+    name: "geometry_add_point",
+    description: "Add a free point at (x, y). Returns the new point's id, for use as `a`/`b`/`source`/`center`/etc. in later geometry_add_* calls.",
+    inputSchema: {
+      type: "object",
+      properties: { x: { type: "number" }, y: { type: "number" } },
+      required: ["x", "y"],
+    },
+    handler: (input: Record<string, unknown>) => ({ id: addPoint(Number(input.x), Number(input.y)) }),
+  });
+
+  useModelContextTool({
+    name: "geometry_add_line",
+    description: "Add a line through two existing points (by id, as returned from geometry_add_point or geomObjects).",
+    inputSchema: {
+      type: "object",
+      properties: { a: { type: "string" }, b: { type: "string" } },
+      required: ["a", "b"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      addLine(String(input.a), String(input.b));
+      return { ok: true };
+    },
+  });
+
+  useModelContextTool({
+    name: "geometry_add_circle",
+    description: "Add a circle centered at one existing point, passing through another (both by id).",
+    inputSchema: {
+      type: "object",
+      properties: { center: { type: "string" }, radiusPoint: { type: "string" } },
+      required: ["center", "radiusPoint"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      addCircle(String(input.center), String(input.radiusPoint));
+      return { ok: true };
+    },
+  });
+
+  useModelContextTool({
+    name: "geometry_add_reflection",
+    description: "Add a point reflection of `source` through `center` (both existing point ids).",
+    inputSchema: {
+      type: "object",
+      properties: { source: { type: "string" }, center: { type: "string" } },
+      required: ["source", "center"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      addReflection(String(input.source), String(input.center));
+      return { ok: true };
+    },
+  });
+
+  useModelContextTool({
+    name: "geometry_add_rotation",
+    description: "Rotate `source` around `center` by a fixed angle in degrees (both existing point ids).",
+    inputSchema: {
+      type: "object",
+      properties: { source: { type: "string" }, center: { type: "string" }, angleDegrees: { type: "number" } },
+      required: ["source", "center", "angleDegrees"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      addRotation(String(input.source), String(input.center), Number(input.angleDegrees));
+      return { ok: true };
+    },
+  });
+
+  useModelContextTool({
+    name: "geometry_add_translation",
+    description: "Translate `source` by a fixed (dx, dy) (source is an existing point id).",
+    inputSchema: {
+      type: "object",
+      properties: { source: { type: "string" }, dx: { type: "number" }, dy: { type: "number" } },
+      required: ["source", "dx", "dy"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      addTranslation(String(input.source), Number(input.dx), Number(input.dy));
+      return { ok: true };
+    },
+  });
+
+  useModelContextTool({
+    name: "geometry_add_scale",
+    description: "Scale `source` about `center` by a fixed factor (both existing point ids).",
+    inputSchema: {
+      type: "object",
+      properties: { source: { type: "string" }, center: { type: "string" }, factor: { type: "number" } },
+      required: ["source", "center", "factor"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      addScale(String(input.source), String(input.center), Number(input.factor));
+      return { ok: true };
+    },
+  });
+
+  useModelContextTool({
+    name: "geometry_add_angle",
+    description: "Measure the interior angle at `vertex` between rays to `a` and `c` (all existing point ids).",
+    inputSchema: {
+      type: "object",
+      properties: { a: { type: "string" }, vertex: { type: "string" }, c: { type: "string" } },
+      required: ["a", "vertex", "c"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      addAngle(String(input.a), String(input.vertex), String(input.c));
+      return { ok: true };
+    },
+  });
+
+  useModelContextTool({
+    name: "geometry_add_polygon",
+    description: "Add a polygon through an ordered list of existing point ids (closed automatically back to the first).",
+    inputSchema: {
+      type: "object",
+      properties: { points: { type: "array", items: { type: "string" }, description: "Ordered point ids, at least 3." } },
+      required: ["points"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      const points = input.points;
+      if (!Array.isArray(points) || points.length < 3) throw new Error("points must be an array of at least 3 point ids.");
+      addPolygon(points.map(String));
+      return { ok: true };
+    },
+  });
 
   function dataCoordsFromEvent(e: PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
     const { sx, sy } = canvasEventPoint(e, e.currentTarget, WIDTH, HEIGHT);

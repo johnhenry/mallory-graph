@@ -2,6 +2,7 @@ import { Distributions, Statistics, Vector } from "mallory-math";
 import { useRef, useState } from "react";
 import { cellIdsStatistics } from "../lib/cell-ids.ts";
 import { CellGraph } from "../lib/cell-graph.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useCell } from "../lib/use-cell.ts";
 
 type SummaryResult =
@@ -166,6 +167,7 @@ export interface StatisticsPanelProps {
 /** v1: descriptive statistics for an entered dataset, plus an interval-probability calculator over any of five distributions. */
 export function StatisticsPanel({ cellId = "statistics-1" }: StatisticsPanelProps = {}) {
   const graph = useStatisticsGraph(cellId);
+  useCellGraphTools("data_statistics", graph);
   const ids = cellIdsStatistics(cellId);
   const data = useCell<string>(graph, ids.data);
   const summary = useCell<SummaryResult>(graph, ids.summary);

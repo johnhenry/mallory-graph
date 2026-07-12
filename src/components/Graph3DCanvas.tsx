@@ -14,6 +14,7 @@ import { KeyframeSliderControl } from "./KeyframeSliderControl.tsx";
 import { meshToGeometry, meshToMaterial } from "../lib/mesh-to-geometry.ts";
 import { sampleSurface, type SurfaceDomain } from "../lib/sample-surface.ts";
 import { timelineDuration, type Keyframe } from "../lib/timeline.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { TransportControls } from "./TransportControls.tsx";
 import { useCell } from "../lib/use-cell.ts";
 import { useTimelinePlayback } from "../lib/use-timeline-playback.ts";
@@ -121,6 +122,7 @@ export function Graph3DCanvas({
 }: Graph3DCanvasProps = {}) {
   const ids = cellIds3D(cellId);
   const graph = useExpressionGraph3D(cellId, defaultSource, externalGraph);
+  useCellGraphTools("surface3d", graph);
   const mesh = useCell<Mesh[] | null>(graph, ids.mesh);
   const freeVars = useCell<string[]>(graph, ids.freeVars);
   const exprValue = useCell<string>(graph, ids.expr);

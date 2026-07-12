@@ -5,6 +5,7 @@ import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsRegression } from "../lib/cell-ids.ts";
 import { collectFreeVars } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { drawPath, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { useCell } from "../lib/use-cell.ts";
 
@@ -150,6 +151,7 @@ export interface RegressionPanelProps {
 /** Linear regression (least squares) or a nonlinear (Levenberg-Marquardt) fit to a custom model, over a spreadsheet-style (x, y) row list. */
 export function RegressionPanel({ cellId = "regression-1" }: RegressionPanelProps = {}) {
   const graph = useRegressionGraph(cellId);
+  useCellGraphTools("data_regression", graph);
   const ids = cellIdsRegression(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 

@@ -2,6 +2,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsMultiRow, cellIdsNotebookBlock, notebookValueCellId } from "../lib/cell-ids.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
+import { useModelContextTool } from "../hooks/use-model-context-tool.ts";
 import {
   DEFAULT_NOTEBOOK_STATE,
   decodeNotebookState,
@@ -123,6 +125,8 @@ export function NotebookPanel() {
 
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const saveGraphFn = useServerFn(saveGraph);
+
+  useCellGraphTools("notebook", graph);
 
   function forkView() {
     window.open(window.location.href, "_blank");
@@ -254,6 +258,83 @@ export function NotebookPanel() {
       }),
     );
   }
+
+  useModelContextTool({
+    name: "notebook_list_blocks",
+    description: "List every block in the notebook, in order, with its id, type, and type-specific content.",
+    inputSchema: { type: "object", properties: {} },
+    handler: () => blocks,
+  });
+
+  useModelContextTool({
+    name: "notebook_add_text_block",
+    description: "Append a text block to the end of the notebook.",
+    inputSchema: {
+      type: "object",
+      properties: { content: { type: "string", description: "Initial text content (default empty)." } },
+    },
+    handler: (input: Record<string, unknown>) => {
+      const id = crypto.randomUUID();
+      const content = typeof input.content === "string" ? input.content : "";
+      setBlocks((prev) => [...prev, { id, type: "text", content }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_graph_block",
+    description: "Append a graph block (a mini multi-expression grapher) to the end of the notebook.",
+    inputSchema: {
+      type: "object",
+      properties: { source: { type: "string", description: 'Initial expression, e.g. "x" or "k*sin(x)" (default "x").' } },
+    },
+    handler: (input: Record<string, unknown>) => {
+      const id = crypto.randomUUID();
+      const initialSource = typeof input.source === "string" && input.source.trim() ? input.source : "x";
+      setBlocks((prev) => [...prev, { id, type: "graph", initialSource }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_value_block",
+    description: 'Append a named value block, referenceable by name (e.g. "k") from any graph block\'s expressions in this notebook. Name must be a single lowercase letter other than x/y (this app\'s expression parser splits any longer name into single-letter variables multiplied together).',
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "A single lowercase letter, not x or y." },
+        value: { type: "number", description: "Initial value (default 1)." },
+      },
+      required: ["name"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      const name = String(input.name ?? "");
+      if (!/^[a-z]$/.test(name) || name === "x" || name === "y") {
+        throw new Error('name must be a single lowercase letter, not "x" or "y".');
+      }
+      const value = input.value === undefined ? 1 : Number(input.value);
+      graph.set(notebookValueCellId(name), value);
+      const id = crypto.randomUUID();
+      setBlocks((prev) => [...prev, { id, type: "value", name, value }]);
+      return { id, name, value };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_remove_block",
+    description: "Remove a block by id (as reported by notebook_list_blocks).",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+    handler: (input: Record<string, unknown>) => {
+      const id = String(input.id ?? "");
+      if (!blocks.some((b) => b.id === id)) throw new Error(`No block with id "${id}".`);
+      removeBlock(id);
+      return { ok: true };
+    },
+  });
 
   return (
     <div>

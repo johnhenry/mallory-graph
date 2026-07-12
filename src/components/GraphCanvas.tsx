@@ -15,6 +15,7 @@ import { drawFilledArea, drawPath, drawPoint, drawRegionMask, drawScatter, type 
 import { sampleExpr, sampleRegionMask } from "../lib/sample-function.ts";
 import { sampleStructureExpr, type ScatterPoint } from "../lib/sample-structure.ts";
 import { HIGHLIGHT_PRELUDE_SECONDS, timelineDuration, type Keyframe } from "../lib/timeline.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useTimelinePlayback } from "../lib/use-timeline-playback.ts";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CopyableTex } from "./CopyableTex.tsx";
@@ -324,6 +325,7 @@ export function GraphCanvas({
   const viewport = DEFAULT_GRAPH_STATE.viewport;
   const ids = cellIds(cellId);
   const graph = useExpressionGraph(cellId, defaultSource, viewport, externalGraph);
+  useCellGraphTools("graphing", graph);
   const path = useCell<Path2D>(graph, ids.path);
   const point = useCell<CurvePoint | null>(graph, ids.point);
   const exact = useCell<string | null>(graph, ids.exact);

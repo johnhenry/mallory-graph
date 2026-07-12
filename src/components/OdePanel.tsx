@@ -7,6 +7,7 @@ import { startOdeExportJob } from "../lib/export-ode-video.ts";
 import { VideoExportControls } from "./VideoExportControls.tsx";
 import { drawPath, drawSlopeField, type Viewport } from "../lib/render-path.ts";
 import { attemptOdeClosedForm, type OdeClosedFormAttempt, sampleOdeSolution, sampleSlopeField, type SlopeFieldPoint } from "../lib/sample-ode.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { CopyableTex } from "./CopyableTex.tsx";
 
@@ -93,6 +94,7 @@ export interface OdePanelProps {
 /** v1: a single first-order IVP dy/dx = f(x,y), y(x0) = y0, plotted against its slope field. No animation/dragging. */
 export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
   const graph = useOdeGraph(cellId);
+  useCellGraphTools("calculus_ode", graph);
   const ids = cellIdsOde(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 

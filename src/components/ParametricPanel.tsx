@@ -2,6 +2,7 @@ import type { Path2D } from "mallory-math";
 import { useEffect, useRef } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsParametric } from "../lib/cell-ids.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { drawPath, type Viewport } from "../lib/render-path.ts";
 import { sampleParametricCurve, samplePolarCurve } from "../lib/sample-parametric.ts";
 import { useCell } from "../lib/use-cell.ts";
@@ -65,6 +66,7 @@ export interface ParametricPanelProps {
 /** v1: a single parametric curve (x(t),y(t)) or polar curve r(θ), over a fixed domain and viewport. */
 export function ParametricPanel({ cellId = "parametric-1" }: ParametricPanelProps = {}) {
   const graph = useParametricGraph(cellId);
+  useCellGraphTools("graphing_parametric", graph);
   const ids = cellIdsParametric(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 

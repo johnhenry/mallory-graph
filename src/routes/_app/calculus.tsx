@@ -16,6 +16,7 @@ function CalculusPage() {
         <p className="lede">One equation, or a coupled system.</p>
       </div>
       <CategoryTabs
+        prefix="calculus"
         tabs={[
           { label: "Single ODE", render: () => <OdePanel /> },
           { label: "ODE System", render: () => <OdeSystemPanel /> },

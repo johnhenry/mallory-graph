@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { cellIdsImplicit } from "../lib/cell-ids.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { drawImplicitCurve, type Viewport } from "../lib/render-path.ts";
 import { sampleImplicitCurve, type ImplicitSegment } from "../lib/sample-implicit.ts";
 import { useCell } from "../lib/use-cell.ts";
@@ -59,6 +60,7 @@ export interface ImplicitPanelProps {
 /** v1: a single two-variable relation (e.g. "x^2+y^2=4") traced via marching squares over a fixed (non-pannable) domain. */
 export function ImplicitPanel({ cellId = "implicit-1" }: ImplicitPanelProps = {}) {
   const graph = useImplicitGraph(cellId);
+  useCellGraphTools("graphing_implicit", graph);
   const ids = cellIdsImplicit(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 

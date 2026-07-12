@@ -10,6 +10,7 @@ import {
   type OdeSystemSpec,
   type VectorFieldPoint,
 } from "../lib/sample-ode.ts";
+import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useCell } from "../lib/use-cell.ts";
 
 type TrajectoryResult = { ok: true; path: Path2D; final: { t: number; x: number; y: number } } | { ok: false; message: string };
@@ -118,6 +119,7 @@ export interface OdeSystemPanelProps {
  */
 export function OdeSystemPanel({ cellId = "ode-system-1" }: OdeSystemPanelProps = {}) {
   const graph = useOdeSystemGraph(cellId);
+  useCellGraphTools("calculus_ode_system", graph);
   const ids = cellIdsOdeSystem(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 

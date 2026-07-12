@@ -17,6 +17,7 @@ function GraphingPage() {
         <p className="lede">Three modes over one shared canvas.</p>
       </div>
       <CategoryTabs
+        prefix="graphing"
         tabs={[
           { label: "Multi-expression", render: () => <GraphCanvasMulti /> },
           { label: "Implicit", render: () => <ImplicitPanel /> },
