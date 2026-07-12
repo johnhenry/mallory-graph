@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 import { OdeSystemPanel } from "../components/OdeSystemPanel.tsx";
 
 export const Route = createFileRoute("/ode-system")({
@@ -21,8 +22,9 @@ function OdeSystemPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/calculus" label="Calculus" />
       <OdeSystemPanel />
     </div>
   );

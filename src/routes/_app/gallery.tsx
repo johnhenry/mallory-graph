@@ -1,25 +1,28 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
-import { encodeMultiGraphState, type MultiGraphState } from "../lib/multi-graph-state.ts";
-import { encodeNotebookState, type NotebookState } from "../lib/notebook-state.ts";
-import { deleteSavedGraph, getSavedGraph, listSavedGraphs, type SavedGraphSummary } from "../lib/saved-graphs.ts";
+import { encodeMultiGraphState, type MultiGraphState } from "~/lib/multi-graph-state.ts";
+import { encodeNotebookState, type NotebookState } from "~/lib/notebook-state.ts";
+import { deleteSavedGraph, getSavedGraph, listSavedGraphs, type SavedGraphSummary } from "~/lib/saved-graphs.ts";
 
-export const Route = createFileRoute("/gallery")({
+export const Route = createFileRoute("/_app/gallery")({
   component: GalleryPage,
 });
 
 /**
  * Lists every graph/notebook saved from either "Save to gallery" button --
- * GraphCanvasMulti's (`/multi`) or NotebookPanel's (`/notebook`). One
- * shared, mixed-content gallery (see saved-graphs.ts's own doc comment for
- * why, rather than a second parallel gallery): each entry's `kind` says
- * which route/encoder to reopen it with. Opening one just navigates to
- * that route with the saved state encoded into the hash -- reusing the
- * exact hydrate-from-hash mechanism each route's own URL-sync feature
- * already provides, so no separate "load by id" hydration path was needed.
- * Editing a reopened graph/notebook and hitting "Fork this view"/re-saving
- * is the "remix" half of the research roadmap's publish/remix item.
+ * GraphCanvasMulti's (now surfaced at `/graphing`) or NotebookPanel's (now
+ * `/notes`). One shared, mixed-content gallery (see saved-graphs.ts's own
+ * doc comment for why): each entry's `kind` says which route/encoder to
+ * reopen it with.
+ *
+ * Moved under the `_app` shell during the SPA-shell pass (same URL,
+ * `/gallery` -- a pathless layout route adds no path segment); reopen hrefs
+ * retargeted from the legacy `/multi`/`/notebook` to the new `/graphing`/
+ * `/notes` so a saved item lands on the new section instead of a legacy
+ * page it would immediately banner away from (`GraphCanvasMulti`/
+ * `NotebookPanel` only ever read/write `window.location.hash`, never their
+ * own pathname, so this is safe).
  */
 function GalleryPage() {
   const listSavedGraphsFn = useServerFn(listSavedGraphs);
@@ -42,8 +45,8 @@ function GalleryPage() {
       // depending on a hash-only change re-triggering it.
       const href =
         entry.kind === "notebook"
-          ? `/notebook#${encodeNotebookState(state as NotebookState)}`
-          : `/multi#${encodeMultiGraphState(state as MultiGraphState)}`;
+          ? `/notes#${encodeNotebookState(state as NotebookState)}`
+          : `/graphing#${encodeMultiGraphState(state as MultiGraphState)}`;
       window.location.href = href;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -57,21 +60,14 @@ function GalleryPage() {
 
   return (
     <div>
-      <h1>mallory-graph — gallery</h1>
-      <details>
-        <summary>
-          Graphs and notebooks saved from the "Save to gallery" button on the multiple-expressions and notebook
-          views.
-        </summary>
-        <p>
-          Saved from either <Link to="/multi">multiple-expressions view</Link> or the{" "}
-          <Link to="/notebook">notebook</Link>. Opening one reopens it fully editable; fork or re-save to remix it.
-          v1 is a single shared, unauthenticated gallery — no per-user accounts or private graphs.
+      <div className="page-head">
+        <p className="page-eyebrow">Gallery</p>
+        <h1>Everything you've saved</h1>
+        <p className="lede">
+          Graphs and notebooks saved from the "Save to gallery" button on Graphing or Notebook. Opening one reopens
+          it fully editable.
         </p>
-      </details>
-      <p>
-        <Link to="/">← back</Link>
-      </p>
+      </div>
       {error && <p style={{ color: "crimson" }}>{error}</p>}
       {entries === null && !error && <p>Loading…</p>}
       {entries?.length === 0 && <p>Nothing saved yet.</p>}

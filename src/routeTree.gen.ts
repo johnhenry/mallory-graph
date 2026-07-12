@@ -21,8 +21,17 @@ import { Route as MultiRouteImport } from './routes/multi'
 import { Route as LinkedRouteImport } from './routes/linked'
 import { Route as ImplicitRouteImport } from './routes/implicit'
 import { Route as GeometryRouteImport } from './routes/geometry'
-import { Route as GalleryRouteImport } from './routes/gallery'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as DemosRouteImport } from './routes/demos'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppNotesRouteImport } from './routes/_app/notes'
+import { Route as AppGraphingRouteImport } from './routes/_app/graphing'
+import { Route as AppGeoRouteImport } from './routes/_app/geo'
+import { Route as AppGalleryRouteImport } from './routes/_app/gallery'
+import { Route as AppDataRouteImport } from './routes/_app/data'
+import { Route as AppCalculusRouteImport } from './routes/_app/calculus'
+import { Route as AppCalculatorRouteImport } from './routes/_app/calculator'
+import { Route as App3dRouteImport } from './routes/_app/3d'
 
 const SystemsRoute = SystemsRouteImport.update({
   id: '/systems',
@@ -84,20 +93,64 @@ const GeometryRoute = GeometryRouteImport.update({
   path: '/geometry',
   getParentRoute: () => rootRouteImport,
 } as any)
-const GalleryRoute = GalleryRouteImport.update({
-  id: '/gallery',
-  path: '/gallery',
+const DemosRoute = DemosRouteImport.update({
+  id: '/demos',
+  path: '/demos',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotesRoute = AppNotesRouteImport.update({
+  id: '/notes',
+  path: '/notes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppGraphingRoute = AppGraphingRouteImport.update({
+  id: '/graphing',
+  path: '/graphing',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppGeoRoute = AppGeoRouteImport.update({
+  id: '/geo',
+  path: '/geo',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppGalleryRoute = AppGalleryRouteImport.update({
+  id: '/gallery',
+  path: '/gallery',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDataRoute = AppDataRouteImport.update({
+  id: '/data',
+  path: '/data',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCalculusRoute = AppCalculusRouteImport.update({
+  id: '/calculus',
+  path: '/calculus',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCalculatorRoute = AppCalculatorRouteImport.update({
+  id: '/calculator',
+  path: '/calculator',
+  getParentRoute: () => AppRoute,
+} as any)
+const App3dRoute = App3dRouteImport.update({
+  id: '/3d',
+  path: '/3d',
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/gallery': typeof GalleryRoute
+  '/': typeof AppIndexRoute
+  '/demos': typeof DemosRoute
   '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
@@ -110,10 +163,17 @@ export interface FileRoutesByFullPath {
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
+  '/3d': typeof App3dRoute
+  '/calculator': typeof AppCalculatorRoute
+  '/calculus': typeof AppCalculusRoute
+  '/data': typeof AppDataRoute
+  '/gallery': typeof AppGalleryRoute
+  '/geo': typeof AppGeoRoute
+  '/graphing': typeof AppGraphingRoute
+  '/notes': typeof AppNotesRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/gallery': typeof GalleryRoute
+  '/demos': typeof DemosRoute
   '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
@@ -126,11 +186,20 @@ export interface FileRoutesByTo {
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
+  '/3d': typeof App3dRoute
+  '/calculator': typeof AppCalculatorRoute
+  '/calculus': typeof AppCalculusRoute
+  '/data': typeof AppDataRoute
+  '/gallery': typeof AppGalleryRoute
+  '/geo': typeof AppGeoRoute
+  '/graphing': typeof AppGraphingRoute
+  '/notes': typeof AppNotesRoute
+  '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/gallery': typeof GalleryRoute
+  '/_app': typeof AppRouteWithChildren
+  '/demos': typeof DemosRoute
   '/geometry': typeof GeometryRoute
   '/implicit': typeof ImplicitRoute
   '/linked': typeof LinkedRoute
@@ -143,12 +212,21 @@ export interface FileRoutesById {
   '/statistics': typeof StatisticsRoute
   '/surface-3d': typeof Surface3dRoute
   '/systems': typeof SystemsRoute
+  '/_app/3d': typeof App3dRoute
+  '/_app/calculator': typeof AppCalculatorRoute
+  '/_app/calculus': typeof AppCalculusRoute
+  '/_app/data': typeof AppDataRoute
+  '/_app/gallery': typeof AppGalleryRoute
+  '/_app/geo': typeof AppGeoRoute
+  '/_app/graphing': typeof AppGraphingRoute
+  '/_app/notes': typeof AppNotesRoute
+  '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/gallery'
+    | '/demos'
     | '/geometry'
     | '/implicit'
     | '/linked'
@@ -161,10 +239,17 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/surface-3d'
     | '/systems'
+    | '/3d'
+    | '/calculator'
+    | '/calculus'
+    | '/data'
+    | '/gallery'
+    | '/geo'
+    | '/graphing'
+    | '/notes'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
-    | '/gallery'
+    | '/demos'
     | '/geometry'
     | '/implicit'
     | '/linked'
@@ -177,10 +262,19 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/surface-3d'
     | '/systems'
+    | '/3d'
+    | '/calculator'
+    | '/calculus'
+    | '/data'
+    | '/gallery'
+    | '/geo'
+    | '/graphing'
+    | '/notes'
+    | '/'
   id:
     | '__root__'
-    | '/'
-    | '/gallery'
+    | '/_app'
+    | '/demos'
     | '/geometry'
     | '/implicit'
     | '/linked'
@@ -193,11 +287,20 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/surface-3d'
     | '/systems'
+    | '/_app/3d'
+    | '/_app/calculator'
+    | '/_app/calculus'
+    | '/_app/data'
+    | '/_app/gallery'
+    | '/_app/geo'
+    | '/_app/graphing'
+    | '/_app/notes'
+    | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  GalleryRoute: typeof GalleryRoute
+  AppRoute: typeof AppRouteWithChildren
+  DemosRoute: typeof DemosRoute
   GeometryRoute: typeof GeometryRoute
   ImplicitRoute: typeof ImplicitRoute
   LinkedRoute: typeof LinkedRoute
@@ -298,26 +401,115 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GeometryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/gallery': {
-      id: '/gallery'
-      path: '/gallery'
-      fullPath: '/gallery'
-      preLoaderRoute: typeof GalleryRouteImport
+    '/demos': {
+      id: '/demos'
+      path: '/demos'
+      fullPath: '/demos'
+      preLoaderRoute: typeof DemosRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/': {
+      id: '/_app/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notes': {
+      id: '/_app/notes'
+      path: '/notes'
+      fullPath: '/notes'
+      preLoaderRoute: typeof AppNotesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/graphing': {
+      id: '/_app/graphing'
+      path: '/graphing'
+      fullPath: '/graphing'
+      preLoaderRoute: typeof AppGraphingRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/geo': {
+      id: '/_app/geo'
+      path: '/geo'
+      fullPath: '/geo'
+      preLoaderRoute: typeof AppGeoRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/gallery': {
+      id: '/_app/gallery'
+      path: '/gallery'
+      fullPath: '/gallery'
+      preLoaderRoute: typeof AppGalleryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/data': {
+      id: '/_app/data'
+      path: '/data'
+      fullPath: '/data'
+      preLoaderRoute: typeof AppDataRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/calculus': {
+      id: '/_app/calculus'
+      path: '/calculus'
+      fullPath: '/calculus'
+      preLoaderRoute: typeof AppCalculusRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/calculator': {
+      id: '/_app/calculator'
+      path: '/calculator'
+      fullPath: '/calculator'
+      preLoaderRoute: typeof AppCalculatorRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/3d': {
+      id: '/_app/3d'
+      path: '/3d'
+      fullPath: '/3d'
+      preLoaderRoute: typeof App3dRouteImport
+      parentRoute: typeof AppRoute
     }
   }
 }
 
+interface AppRouteChildren {
+  App3dRoute: typeof App3dRoute
+  AppCalculatorRoute: typeof AppCalculatorRoute
+  AppCalculusRoute: typeof AppCalculusRoute
+  AppDataRoute: typeof AppDataRoute
+  AppGalleryRoute: typeof AppGalleryRoute
+  AppGeoRoute: typeof AppGeoRoute
+  AppGraphingRoute: typeof AppGraphingRoute
+  AppNotesRoute: typeof AppNotesRoute
+  AppIndexRoute: typeof AppIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  App3dRoute: App3dRoute,
+  AppCalculatorRoute: AppCalculatorRoute,
+  AppCalculusRoute: AppCalculusRoute,
+  AppDataRoute: AppDataRoute,
+  AppGalleryRoute: AppGalleryRoute,
+  AppGeoRoute: AppGeoRoute,
+  AppGraphingRoute: AppGraphingRoute,
+  AppNotesRoute: AppNotesRoute,
+  AppIndexRoute: AppIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  GalleryRoute: GalleryRoute,
+  AppRoute: AppRouteWithChildren,
+  DemosRoute: DemosRoute,
   GeometryRoute: GeometryRoute,
   ImplicitRoute: ImplicitRoute,
   LinkedRoute: LinkedRoute,

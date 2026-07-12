@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { GraphCanvasMulti } from "../components/GraphCanvasMulti.tsx";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 
 interface MultiSearch {
   embed?: boolean;
@@ -61,8 +62,9 @@ function MultiPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/graphing" label="Graphing" />
       <GraphCanvasMulti />
     </div>
   );

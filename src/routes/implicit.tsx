@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ImplicitPanel } from "../components/ImplicitPanel.tsx";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 
 export const Route = createFileRoute("/implicit")({
   component: ImplicitPage,
@@ -19,8 +20,9 @@ function ImplicitPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/graphing" label="Graphing" />
       <ImplicitPanel />
     </div>
   );

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 import { ParametricPanel } from "../components/ParametricPanel.tsx";
 
 export const Route = createFileRoute("/parametric")({
@@ -17,8 +18,9 @@ function ParametricPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/graphing" label="Graphing" />
       <ParametricPanel />
     </div>
   );

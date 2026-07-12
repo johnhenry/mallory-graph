@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { GeometryPanel } from "../components/GeometryPanel.tsx";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 
 export const Route = createFileRoute("/geometry")({
   component: GeometryPage,
@@ -27,8 +28,9 @@ function GeometryPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/geo" label="Geometry" />
       <GeometryPanel />
     </div>
   );

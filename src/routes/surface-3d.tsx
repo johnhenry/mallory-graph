@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 import { Linked3DView } from "../components/Linked3DView.tsx";
 
 export const Route = createFileRoute("/surface-3d")({
@@ -20,8 +21,9 @@ function ThreeDPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/3d" label="3D & Surfaces" />
       <Linked3DView />
     </div>
   );

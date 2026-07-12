@@ -2,14 +2,25 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { GraphCanvas } from "../components/GraphCanvas.tsx";
 import { DEFAULT_GRAPH_STATE } from "../lib/graph-state.ts";
 
-export const Route = createFileRoute("/")({
-  component: HomePage,
+export const Route = createFileRoute("/demos")({
+  component: DemosPage,
 });
 
-function HomePage() {
+/**
+ * The relocated legacy home page (this app's `/` before the SPA-shell pass)
+ * -- kept verbatim, including its own single-expression `GraphCanvas`, as
+ * an escape hatch out of the new shell rather than deleted. Deliberately a
+ * plain top-level route (outside `_app`'s pathless layout), so it doesn't
+ * carry the persistent sidebar -- it's meant to feel like the old app, not
+ * the new one.
+ */
+function DemosPage() {
   return (
     <div>
-      <h1>mallory-graph</h1>
+      <h1>mallory-graph — legacy demos</h1>
+      <p>
+        <Link to="/">← the new app</Link>
+      </p>
       <p>
         <code>y = {DEFAULT_GRAPH_STATE.cells[0].source}</code>, sampled and plotted through mallory-math's reactive
         core (<code>Symbolic.compile</code> → <code>CellGraph</code> → <code>GraphUtils.vectorToCurve</code>).

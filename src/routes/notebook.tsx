@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 import { NotebookPanel } from "../components/NotebookPanel.tsx";
 
 export const Route = createFileRoute("/notebook")({
@@ -23,8 +24,9 @@ function NotebookPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/notes" label="Notebook" />
       <NotebookPanel />
     </div>
   );

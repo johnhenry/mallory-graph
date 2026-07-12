@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { LegacyBanner } from "../components/LegacyBanner.tsx";
 import { StatisticsPanel } from "../components/StatisticsPanel.tsx";
 
 export const Route = createFileRoute("/statistics")({
@@ -21,8 +22,9 @@ function StatisticsPage() {
         </p>
       </details>
       <p>
-        <Link to="/">← back</Link>
+        <Link to="/demos">← back</Link>
       </p>
+      <LegacyBanner to="/data" label="Data & Algebra" />
       <StatisticsPanel />
     </div>
   );
