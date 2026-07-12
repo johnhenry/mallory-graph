@@ -122,7 +122,10 @@ export function Graph3DCanvas({
 }: Graph3DCanvasProps = {}) {
   const ids = cellIds3D(cellId);
   const graph = useExpressionGraph3D(cellId, defaultSource, externalGraph);
-  useCellGraphTools("surface3d", graph);
+  // Namespaced by cellId (not a flat "surface3d") so two Graph3DCanvas panes
+  // sharing one CellGraph -- e.g. a future second notebook-embedded surface
+  // block -- don't collide on tool names, same fix as GraphCanvas's.
+  useCellGraphTools(`surface3d_${cellId}`, graph);
   const mesh = useCell<Mesh[] | null>(graph, ids.mesh);
   const freeVars = useCell<string[]>(graph, ids.freeVars);
   const exprValue = useCell<string>(graph, ids.expr);

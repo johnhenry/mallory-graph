@@ -1,3 +1,10 @@
+import { isGeometryStateV1, type GeometryState } from "./geometry-state.ts";
+import { isOdeStateV1, type OdeState } from "./ode-state.ts";
+import { isOdeSystemStateV1, type OdeSystemState } from "./ode-system-state.ts";
+import { isRegressionStateV1, type RegressionState } from "./regression-state.ts";
+import { isStatisticsStateV1, type StatisticsState } from "./statistics-state.ts";
+import { isSystemStateV1, type SystemState } from "./system-state.ts";
+
 /**
  * URL-state schema for NotebookPanel, parallel to multi-graph-state.ts's
  * schema for GraphCanvasMulti (not layered onto either's own lineage, since
@@ -6,6 +13,14 @@
  * hash convention: no server round-trip, Desmos-style. Duplicates its own
  * tiny base64url helpers rather than sharing them with multi-graph-state.ts,
  * matching that file's own choice not to factor them out either.
+ *
+ * The 6 later block types (surface3d/ode/ode-system/regression/statistics/
+ * geometry, added in the organizational gap-fixing pass) each nest their
+ * standalone panel's own already-existing state shape/validator (ode-
+ * state.ts etc.) rather than re-declaring the fields -- one exception,
+ * `NotebookSurface3DBlockStateV1`, since Graph3DCanvas has no independent
+ * top-level save/URL state of its own (only Linked3DView's combined
+ * `linked3d-state.ts` does).
  */
 export interface NotebookGraphBlockStateV1 {
   type: "graph";
@@ -13,10 +28,53 @@ export interface NotebookGraphBlockStateV1 {
   viewport: { xMin: number; xMax: number; yMin: number; yMax: number };
 }
 
+export interface NotebookSurface3DBlockStateV1 {
+  type: "surface3d";
+  expr: string;
+  params: Record<string, number>;
+}
+
+export interface NotebookOdeBlockStateV1 {
+  type: "ode";
+  state: OdeState;
+}
+
+export interface NotebookOdeSystemBlockStateV1 {
+  type: "ode-system";
+  state: OdeSystemState;
+}
+
+export interface NotebookRegressionBlockStateV1 {
+  type: "regression";
+  state: RegressionState;
+}
+
+export interface NotebookStatisticsBlockStateV1 {
+  type: "statistics";
+  state: StatisticsState;
+}
+
+export interface NotebookSystemsBlockStateV1 {
+  type: "systems";
+  state: SystemState;
+}
+
+export interface NotebookGeometryBlockStateV1 {
+  type: "geometry";
+  state: GeometryState;
+}
+
 export type NotebookBlockStateV1 =
   | { type: "text"; content: string }
   | NotebookGraphBlockStateV1
-  | { type: "value"; name: string; value: number };
+  | { type: "value"; name: string; value: number }
+  | NotebookSurface3DBlockStateV1
+  | NotebookOdeBlockStateV1
+  | NotebookOdeSystemBlockStateV1
+  | NotebookRegressionBlockStateV1
+  | NotebookStatisticsBlockStateV1
+  | NotebookSystemsBlockStateV1
+  | NotebookGeometryBlockStateV1;
 
 export interface NotebookStateV1 {
   v: 1;
@@ -81,6 +139,15 @@ function isNotebookBlockStateV1(value: unknown): value is NotebookBlockStateV1 {
       );
     });
   }
+  if (b.type === "surface3d") {
+    return typeof b.expr === "string" && typeof b.params === "object" && b.params !== null;
+  }
+  if (b.type === "ode") return isOdeStateV1(b.state);
+  if (b.type === "ode-system") return isOdeSystemStateV1(b.state);
+  if (b.type === "regression") return isRegressionStateV1(b.state);
+  if (b.type === "statistics") return isStatisticsStateV1(b.state);
+  if (b.type === "systems") return isSystemStateV1(b.state);
+  if (b.type === "geometry") return isGeometryStateV1(b.state);
   return false;
 }
 

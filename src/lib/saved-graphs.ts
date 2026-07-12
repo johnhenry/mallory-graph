@@ -14,11 +14,37 @@
  * graphs keep working unchanged.
  */
 import { createServerFn } from "@tanstack/react-start";
+import type { GeometryState } from "./geometry-state.ts";
+import type { Linked3DState } from "./linked3d-state.ts";
 import type { MultiGraphState } from "./multi-graph-state.ts";
 import type { NotebookState } from "./notebook-state.ts";
+import type { OdeState } from "./ode-state.ts";
+import type { OdeSystemState } from "./ode-system-state.ts";
+import type { RegressionState } from "./regression-state.ts";
+import type { StatisticsState } from "./statistics-state.ts";
+import type { SystemState } from "./system-state.ts";
 
-export type SavedGraphKind = "multi" | "notebook";
-export type SavedGraphState = MultiGraphState | NotebookState;
+export type SavedGraphKind =
+  | "multi"
+  | "notebook"
+  | "geometry"
+  | "surface-3d"
+  | "ode"
+  | "ode-system"
+  | "regression"
+  | "statistics"
+  | "systems";
+
+export type SavedGraphState =
+  | MultiGraphState
+  | NotebookState
+  | GeometryState
+  | Linked3DState
+  | OdeState
+  | OdeSystemState
+  | RegressionState
+  | StatisticsState
+  | SystemState;
 
 export interface SavedGraphSummary {
   id: string;

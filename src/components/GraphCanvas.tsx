@@ -325,7 +325,13 @@ export function GraphCanvas({
   const viewport = DEFAULT_GRAPH_STATE.viewport;
   const ids = cellIds(cellId);
   const graph = useExpressionGraph(cellId, defaultSource, viewport, externalGraph);
-  useCellGraphTools("graphing", graph);
+  // Namespaced by cellId (not a flat "graphing") so two GraphCanvas panes
+  // sharing one CellGraph -- LinkedGraphPanes/Linked3DView, and now the
+  // Compare tab -- don't collide on tool names: a second registerTool call
+  // for an already-taken name throws, caught/console.warn'd by
+  // useModelContextTool, silently leaving the second pane un-addressable
+  // (mallory-graph#11's resolution).
+  useCellGraphTools(`graphing_${cellId}`, graph);
   const path = useCell<Path2D>(graph, ids.path);
   const point = useCell<CurvePoint | null>(graph, ids.point);
   const exact = useCell<string | null>(graph, ids.exact);

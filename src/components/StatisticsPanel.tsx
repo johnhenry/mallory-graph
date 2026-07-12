@@ -1,8 +1,16 @@
 import { Distributions, Statistics, Vector } from "mallory-math";
-import { useRef, useState } from "react";
-import { cellIdsStatistics } from "../lib/cell-ids.ts";
+import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { cellIdsStatistics, type CellIdsStatistics } from "../lib/cell-ids.ts";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
+import {
+  DEFAULT_STATISTICS_STATE,
+  decodeStatisticsState,
+  encodeStatisticsState,
+  type StatisticsState,
+} from "../lib/statistics-state.ts";
+import { saveGraph } from "../lib/saved-graphs.ts";
 import { useCell } from "../lib/use-cell.ts";
 
 type SummaryResult =
@@ -31,8 +39,6 @@ const DIST_LABELS: Record<DistType, string> = {
   chiSquare: "Chi-square",
 };
 
-const DEFAULT_DATA = "2, 4, 4, 4, 5, 5, 7, 9";
-
 function parseData(text: string): number[] {
   return text
     .split(/[\s,]+/)
@@ -41,29 +47,53 @@ function parseData(text: string): number[] {
     .map(Number);
 }
 
+/** Writes a state's fields onto `graph`'s free cells -- shared by useStatisticsGraph's own hydrate-from-hash and a notebook block's post-mount overwrite. */
+export function seedStatisticsState(graph: CellGraph, ids: CellIdsStatistics, state: StatisticsState): void {
+  graph.set(ids.data, state.data);
+  graph.set(ids.distType, state.distType as DistType);
+  graph.set(ids.distMean, state.distMean);
+  graph.set(ids.distSd, state.distSd);
+  graph.set(ids.distN, state.distN);
+  graph.set(ids.distP, state.distP);
+  graph.set(ids.distLambda, state.distLambda);
+  graph.set(ids.distDf, state.distDf);
+  graph.set(ids.queryLower, state.queryLower);
+  graph.set(ids.queryUpper, state.queryUpper);
+}
+
+/** Builds the full serializable state of a statistics panel -- shared by the URL-sync effect and the save-to-gallery handler. */
+export function getCurrentStatisticsState(graph: CellGraph, ids: CellIdsStatistics): StatisticsState {
+  return {
+    v: 1,
+    data: graph.get<string>(ids.data),
+    distType: graph.get<DistType>(ids.distType),
+    distMean: graph.get<string>(ids.distMean),
+    distSd: graph.get<string>(ids.distSd),
+    distN: graph.get<string>(ids.distN),
+    distP: graph.get<string>(ids.distP),
+    distLambda: graph.get<string>(ids.distLambda),
+    distDf: graph.get<string>(ids.distDf),
+    queryLower: graph.get<string>(ids.queryLower),
+    queryUpper: graph.get<string>(ids.queryUpper),
+  };
+}
+
 /**
- * Sets up the statistics panel's reactive cells on its own private
- * CellGraph -- a raw data-value list plus separate distribution-query
- * parameters, a different input shape from GraphCanvas's single expression +
- * axis variable, so (like SystemSolverPanel) it isn't woven into
- * `cellIds`/`useExpressionGraph` at all.
+ * Sets up the statistics panel's reactive cells -- a raw data-value list
+ * plus separate distribution-query parameters, a different input shape from
+ * GraphCanvas's single expression + axis variable, so (like
+ * SystemSolverPanel) it isn't woven into `cellIds`/`useExpressionGraph` at
+ * all. Shares an `externalGraph` when supplied instead of creating a private
+ * one, mirroring OdePanel's `useOdeGraph`.
  */
-function useStatisticsGraph(cellId: string): CellGraph {
+function useStatisticsGraph(cellId: string, externalGraph?: CellGraph): CellGraph {
   const ref = useRef<CellGraph | null>(null);
   if (!ref.current) {
-    const graph = new CellGraph();
+    const graph = externalGraph ?? new CellGraph();
     const ids = cellIdsStatistics(cellId);
     if (!graph.has(ids.data)) {
-      graph.set(ids.data, DEFAULT_DATA);
-      graph.set(ids.distType, "normal" as DistType);
-      graph.set(ids.distMean, "0");
-      graph.set(ids.distSd, "1");
-      graph.set(ids.distN, "10");
-      graph.set(ids.distP, "0.5");
-      graph.set(ids.distLambda, "4");
-      graph.set(ids.distDf, "5");
-      graph.set(ids.queryLower, "-1");
-      graph.set(ids.queryUpper, "1");
+      const decoded = !externalGraph && typeof window !== "undefined" ? decodeStatisticsState(window.location.hash.slice(1)) : null;
+      seedStatisticsState(graph, ids, decoded ?? DEFAULT_STATISTICS_STATE);
 
       // Same "surface the real error" deviation SystemSolverPanel uses:
       // this is a discrete action on typed-in text, not a continuous
@@ -162,12 +192,17 @@ function useStatisticsGraph(cellId: string): CellGraph {
 
 export interface StatisticsPanelProps {
   cellId?: string;
+  /** Share an existing CellGraph (e.g. from a notebook block) instead of creating a private one. */
+  graph?: CellGraph;
+  /** Hydrate from and write to the URL fragment. Off for a notebook-embedded instance, whose document owns persistence instead. */
+  syncUrl?: boolean;
 }
 
 /** v1: descriptive statistics for an entered dataset, plus an interval-probability calculator over any of five distributions. */
-export function StatisticsPanel({ cellId = "statistics-1" }: StatisticsPanelProps = {}) {
-  const graph = useStatisticsGraph(cellId);
-  useCellGraphTools("data_statistics", graph);
+export function StatisticsPanel({ cellId = "statistics-1", graph: externalGraph, syncUrl = true }: StatisticsPanelProps = {}) {
+  const graph = useStatisticsGraph(cellId, externalGraph);
+  // Namespaced by cellId, same collision-avoidance fix as OdePanel's.
+  useCellGraphTools(`data_statistics_${cellId}`, graph);
   const ids = cellIdsStatistics(cellId);
   const data = useCell<string>(graph, ids.data);
   const summary = useCell<SummaryResult>(graph, ids.summary);
@@ -183,6 +218,37 @@ export function StatisticsPanel({ cellId = "statistics-1" }: StatisticsPanelProp
   const query = useCell<QueryResult>(graph, ids.query);
 
   const [dataInput, setDataInput] = useState(data);
+  // Keeps the input box in sync when `data` changes for a reason other than
+  // typing in this box -- e.g. URL-hash hydration -- mirrors GraphCanvas's
+  // identically-reasoned effect.
+  useEffect(() => {
+    setDataInput(data);
+  }, [data]);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveGraphFn = useServerFn(saveGraph);
+
+  async function handleSave() {
+    const title = window.prompt("Title for this saved statistics setup:", "Untitled");
+    if (title === null) return;
+    setSaveStatus("Saving…");
+    try {
+      await saveGraphFn({ data: { title, kind: "statistics", state: getCurrentStatisticsState(graph, ids) } });
+      setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
+    } catch (e) {
+      setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Keep the URL fragment in sync with the live graph state, mirroring OdePanel's pattern.
+  useEffect(() => {
+    if (!syncUrl) return;
+    function writeUrl() {
+      window.history.replaceState(null, "", `#${encodeStatisticsState(getCurrentStatisticsState(graph, ids))}`);
+    }
+    writeUrl();
+    return graph.subscribeAll(writeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, syncUrl]);
 
   function updateData(value: string) {
     setDataInput(value);
@@ -316,6 +382,14 @@ export function StatisticsPanel({ cellId = "statistics-1" }: StatisticsPanelProp
           <p style={{ color: "crimson" }}>{query.message}</p>
         )}
       </div>
+      {syncUrl && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <button type="button" onClick={handleSave}>
+            Save to gallery
+          </button>
+          {saveStatus && <p style={{ fontSize: "0.85rem", color: "#5b6b8c", margin: "0.25rem 0" }}>{saveStatus}</p>}
+        </div>
+      )}
     </div>
   );
 }

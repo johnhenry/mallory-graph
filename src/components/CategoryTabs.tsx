@@ -1,8 +1,11 @@
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { useModelContextTool } from "../hooks/use-model-context-tool.ts";
 
 export interface CategoryTab {
   label: string;
+  /** Short slug used by `syncSearchParam` (deep-linking/Gallery reopen) -- required when that prop is set. */
+  key?: string;
   render: () => ReactNode;
 }
 
@@ -18,9 +21,37 @@ export interface CategoryTab {
  * between grouped tools too -- only the active tab's panel is mounted, so
  * only its own tools are registered at any moment; switching tabs is what
  * makes the next set appear (mallory-graph's WebMCP pass).
+ *
+ * `syncSearchParam` (e.g. `"tab"`) makes the active tab a URL search param
+ * instead of purely local state -- needed because each tab's own panel
+ * privately owns its own CellGraph and URL-hash persistence (organizational
+ * gap-fixing pass): a Gallery link to "ODE System" must select that tab
+ * *before* the wrong sibling panel mounts and mis-parses the hash. Reads the
+ * initial tab from the search param (falling back to tab 0 for an unknown/
+ * absent value) and keeps it updated (via `replace`, so tab-switching
+ * doesn't spam browser history) as the user clicks between tabs.
  */
-export function CategoryTabs({ prefix, tabs }: { prefix: string; tabs: CategoryTab[] }) {
-  const [active, setActive] = useState(0);
+export function CategoryTabs({
+  prefix,
+  tabs,
+  syncSearchParam,
+}: {
+  prefix: string;
+  tabs: CategoryTab[];
+  syncSearchParam?: string;
+}) {
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as Record<string, unknown>;
+  const initialFromSearch = syncSearchParam ? tabs.findIndex((t) => t.key === search[syncSearchParam]) : -1;
+  const [active, setActive] = useState(initialFromSearch >= 0 ? initialFromSearch : 0);
+
+  function selectTab(index: number) {
+    setActive(index);
+    if (syncSearchParam) {
+      const key = tabs[index].key;
+      navigate({ to: ".", search: (prev: Record<string, unknown>) => ({ ...prev, [syncSearchParam]: key }), replace: true });
+    }
+  }
 
   useModelContextTool({
     name: `${prefix}_switch_tab`,
@@ -38,7 +69,7 @@ export function CategoryTabs({ prefix, tabs }: { prefix: string; tabs: CategoryT
       if (index === -1) {
         throw new Error(`Unknown tab "${label}". Available tabs: ${tabs.map((t) => t.label).join(", ")}.`);
       }
-      setActive(index);
+      selectTab(index);
       return { ok: true, label };
     },
   });
@@ -53,7 +84,7 @@ export function CategoryTabs({ prefix, tabs }: { prefix: string; tabs: CategoryT
             role="tab"
             aria-selected={i === active}
             className={i === active ? "tab-button active" : "tab-button"}
-            onClick={() => setActive(i)}
+            onClick={() => selectTab(i)}
           >
             {tab.label}
           </button>

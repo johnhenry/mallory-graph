@@ -283,3 +283,27 @@ export function cellIdsRegression(cellId: string) {
 }
 
 export type CellIdsRegression = ReturnType<typeof cellIdsRegression>;
+
+/**
+ * Cell-id namespacing for one geometry construction (GeometryPanel.tsx),
+ * used both by the standalone page (fixed cellId "geo-1") and a notebook-
+ * embedded geometry block (cellId = the block's own id) -- so multiple
+ * constructions can share one `CellGraph` without one's point/line/etc.
+ * list clobbering another's. Only the two *list* cells need namespacing
+ * here, unlike every other per-instance cellIds* factory: every individual
+ * object cell (point/line/circle/...) is already keyed by its own
+ * `crypto.randomUUID()` object id, which is globally unique regardless of
+ * which construction created it -- collisions can only happen on the
+ * shared "which objects exist" list, the same reasoning
+ * `cellIdsNotebookBlock` above applies to a graph block's
+ * viewport/expressionList (its *rows*, in contrast, reuse `cellIdsMultiRow`
+ * unnamespaced by block, for the identical reason).
+ */
+export function cellIdsGeometry(cellId: string) {
+  return {
+    objectList: `geomObjects:${cellId}`,
+    opsLog: `geomOpsLog:${cellId}`,
+  };
+}
+
+export type CellIdsGeometry = ReturnType<typeof cellIdsGeometry>;

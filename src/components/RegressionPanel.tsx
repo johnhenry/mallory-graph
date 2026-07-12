@@ -1,11 +1,14 @@
 import { GraphUtils, Numerical, Statistics, Symbolic, Vector } from "mallory-math";
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";
-import { cellIdsRegression } from "../lib/cell-ids.ts";
+import { cellIdsRegression, type CellIdsRegression } from "../lib/cell-ids.ts";
 import { collectFreeVars } from "../lib/free-vars.ts";
 import { preprocessImplicitMultiplication } from "../lib/implicit-mult.ts";
 import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
+import { DEFAULT_REGRESSION_STATE, decodeRegressionState, encodeRegressionState, type RegressionState } from "../lib/regression-state.ts";
+import { saveGraph } from "../lib/saved-graphs.ts";
 import { drawPath, drawScatter, type Viewport } from "../lib/render-path.ts";
 import { useCell } from "../lib/use-cell.ts";
 
@@ -34,16 +37,6 @@ type FitResult =
     }
   | { ok: false; message: string };
 
-const DEFAULT_ROW_VALUES: Array<[string, string]> = [
-  ["1", "2.1"],
-  ["2", "3.9"],
-  ["3", "6.2"],
-  ["4", "7.8"],
-  ["5", "10.1"],
-];
-
-const DEFAULT_MODEL_EXPR = "a*exp(b*x)";
-
 /** Free variables of `modelText` besides `x` -- the nonlinear model's fit parameters. Empty (not thrown) on a mid-typing parse error. */
 function modelParams(modelText: string): string[] {
   try {
@@ -53,6 +46,26 @@ function modelParams(modelText: string): string[] {
   }
 }
 
+/** Writes a state's fields onto `graph`'s free cells (assigning fresh row ids) -- shared by useRegressionGraph's own hydrate-from-hash and a notebook block's post-mount overwrite. */
+export function seedRegressionState(graph: CellGraph, ids: CellIdsRegression, state: RegressionState): void {
+  const rows: RegressionRow[] = state.rows.map(({ x, y }) => ({ id: crypto.randomUUID(), x, y }));
+  graph.set(ids.rows, rows);
+  graph.set(ids.fitType, state.fitType as FitType);
+  graph.set(ids.modelExpr, state.modelExpr);
+  graph.set(ids.paramGuesses, state.paramGuesses);
+}
+
+/** Builds the full serializable state of a regression panel -- shared by the URL-sync effect and the save-to-gallery handler. */
+export function getCurrentRegressionState(graph: CellGraph, ids: CellIdsRegression): RegressionState {
+  return {
+    v: 1,
+    rows: graph.get<RegressionRow[]>(ids.rows).map(({ x, y }) => ({ x, y })),
+    fitType: graph.get<FitType>(ids.fitType),
+    modelExpr: graph.get<string>(ids.modelExpr),
+    paramGuesses: graph.get<Record<string, string>>(ids.paramGuesses),
+  };
+}
+
 /**
  * Sets up the regression panel's reactive cells -- one ordered row list (a
  * shape distinct enough from every other panel's that, like
@@ -60,19 +73,18 @@ function modelParams(modelText: string): string[] {
  * it gets its own small private CellGraph), plus a fit-type toggle between
  * `Statistics.linearRegression`/`correlation` (already existed upstream,
  * unused anywhere in the UI before this) and `Numerical.levenbergMarquardt`
- * for an arbitrary user-supplied nonlinear model.
+ * for an arbitrary user-supplied nonlinear model. Shares an `externalGraph`
+ * when supplied instead of creating a private one, mirroring OdePanel's
+ * `useOdeGraph`.
  */
-function useRegressionGraph(cellId: string): CellGraph {
+function useRegressionGraph(cellId: string, externalGraph?: CellGraph): CellGraph {
   const ref = useRef<CellGraph | null>(null);
   if (!ref.current) {
-    const graph = new CellGraph();
+    const graph = externalGraph ?? new CellGraph();
     const ids = cellIdsRegression(cellId);
     if (!graph.has(ids.rows)) {
-      const rows: RegressionRow[] = DEFAULT_ROW_VALUES.map(([x, y]) => ({ id: crypto.randomUUID(), x, y }));
-      graph.set(ids.rows, rows);
-      graph.set(ids.fitType, "linear" as FitType);
-      graph.set(ids.modelExpr, DEFAULT_MODEL_EXPR);
-      graph.set(ids.paramGuesses, { a: "1", b: "0.1" } as Record<string, string>);
+      const decoded = !externalGraph && typeof window !== "undefined" ? decodeRegressionState(window.location.hash.slice(1)) : null;
+      seedRegressionState(graph, ids, decoded ?? DEFAULT_REGRESSION_STATE);
 
       graph.define(ids.fit, (): FitResult => {
         try {
@@ -146,12 +158,17 @@ function useRegressionGraph(cellId: string): CellGraph {
 
 export interface RegressionPanelProps {
   cellId?: string;
+  /** Share an existing CellGraph (e.g. from a notebook block) instead of creating a private one. */
+  graph?: CellGraph;
+  /** Hydrate from and write to the URL fragment. Off for a notebook-embedded instance, whose document owns persistence instead. */
+  syncUrl?: boolean;
 }
 
 /** Linear regression (least squares) or a nonlinear (Levenberg-Marquardt) fit to a custom model, over a spreadsheet-style (x, y) row list. */
-export function RegressionPanel({ cellId = "regression-1" }: RegressionPanelProps = {}) {
-  const graph = useRegressionGraph(cellId);
-  useCellGraphTools("data_regression", graph);
+export function RegressionPanel({ cellId = "regression-1", graph: externalGraph, syncUrl = true }: RegressionPanelProps = {}) {
+  const graph = useRegressionGraph(cellId, externalGraph);
+  // Namespaced by cellId, same collision-avoidance fix as OdePanel's.
+  useCellGraphTools(`data_regression_${cellId}`, graph);
   const ids = cellIdsRegression(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -162,6 +179,37 @@ export function RegressionPanel({ cellId = "regression-1" }: RegressionPanelProp
   const fit = useCell<FitResult>(graph, ids.fit);
 
   const [modelExprInput, setModelExprInput] = useState(modelExpr);
+  // Keeps the input box in sync when modelExpr changes for a reason other
+  // than typing in this box -- e.g. URL-hash hydration -- mirrors
+  // GraphCanvas's identically-reasoned effect.
+  useEffect(() => {
+    setModelExprInput(modelExpr);
+  }, [modelExpr]);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveGraphFn = useServerFn(saveGraph);
+
+  async function handleSave() {
+    const title = window.prompt("Title for this saved regression:", "Untitled");
+    if (title === null) return;
+    setSaveStatus("Saving…");
+    try {
+      await saveGraphFn({ data: { title, kind: "regression", state: getCurrentRegressionState(graph, ids) } });
+      setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
+    } catch (e) {
+      setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Keep the URL fragment in sync with the live graph state, mirroring OdePanel's pattern.
+  useEffect(() => {
+    if (!syncUrl) return;
+    function writeUrl() {
+      window.history.replaceState(null, "", `#${encodeRegressionState(getCurrentRegressionState(graph, ids))}`);
+    }
+    writeUrl();
+    return graph.subscribeAll(writeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, syncUrl]);
 
   const viewport: Viewport = fit.ok ? autoViewport(fit.points) : { xMin: -1, xMax: 10, yMin: -1, yMax: 10 };
 
@@ -335,6 +383,14 @@ export function RegressionPanel({ cellId = "regression-1" }: RegressionPanelProp
         )
       ) : (
         <p style={{ color: "crimson" }}>{fit.message}</p>
+      )}
+      {syncUrl && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <button type="button" onClick={handleSave}>
+            Save to gallery
+          </button>
+          {saveStatus && <p style={{ fontSize: "0.85rem", color: "#5b6b8c", margin: "0.25rem 0" }}>{saveStatus}</p>}
+        </div>
       )}
     </div>
   );

@@ -1,7 +1,18 @@
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
-import { cellIdsMultiRow, cellIdsNotebookBlock, notebookValueCellId } from "../lib/cell-ids.ts";
+import {
+  cellIds3D,
+  cellIdsGeometry,
+  cellIdsMultiRow,
+  cellIdsNotebookBlock,
+  cellIdsOde,
+  cellIdsOdeSystem,
+  cellIdsRegression,
+  cellIdsStatistics,
+  cellIdsSystem,
+  notebookValueCellId,
+} from "../lib/cell-ids.ts";
 import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useModelContextTool } from "../hooks/use-model-context-tool.ts";
 import {
@@ -11,13 +22,41 @@ import {
   type NotebookGraphBlockStateV1,
   type NotebookState,
 } from "../lib/notebook-state.ts";
+import { DEFAULT_GEOMETRY_STATE, type GeometryOp } from "../lib/geometry-state.ts";
+import { DEFAULT_ODE_STATE, type OdeState } from "../lib/ode-state.ts";
+import { DEFAULT_ODE_SYSTEM_STATE, type OdeSystemState } from "../lib/ode-system-state.ts";
+import { DEFAULT_REGRESSION_STATE, type RegressionState } from "../lib/regression-state.ts";
+import { DEFAULT_STATISTICS_STATE, type StatisticsState } from "../lib/statistics-state.ts";
+import { DEFAULT_SYSTEM_STATE, type SystemState } from "../lib/system-state.ts";
 import { saveGraph } from "../lib/saved-graphs.ts";
+import { getCurrentGeometryState } from "./GeometryPanel.tsx";
+import { getCurrentOdeState } from "./OdePanel.tsx";
+import { getCurrentOdeSystemState } from "./OdeSystemPanel.tsx";
+import { getCurrentRegressionState } from "./RegressionPanel.tsx";
+import { getCurrentStatisticsState } from "./StatisticsPanel.tsx";
+import { getCurrentSystemState } from "./SystemSolverPanel.tsx";
+import { NotebookGeometryBlock } from "./NotebookGeometryBlock.tsx";
+import { NotebookGraph3DBlock } from "./NotebookGraph3DBlock.tsx";
 import { NotebookGraphBlock } from "./NotebookGraphBlock.tsx";
+import { NotebookOdeBlock } from "./NotebookOdeBlock.tsx";
+import { NotebookOdeSystemBlock } from "./NotebookOdeSystemBlock.tsx";
+import { NotebookRegressionBlock } from "./NotebookRegressionBlock.tsx";
+import { NotebookStatisticsBlock } from "./NotebookStatisticsBlock.tsx";
+import { NotebookSystemsBlock } from "./NotebookSystemsBlock.tsx";
+
+const DEFAULT_SURFACE3D_EXPR = "sin(x)*cos(y)";
 
 type Block =
   | { id: string; type: "text"; content: string }
   | { id: string; type: "graph"; initialSource: string }
-  | { id: string; type: "value"; name: string; value: number };
+  | { id: string; type: "value"; name: string; value: number }
+  | { id: string; type: "surface3d"; initialExpr: string; initialParams: Record<string, number> }
+  | { id: string; type: "ode"; initialState: OdeState }
+  | { id: string; type: "ode-system"; initialState: OdeSystemState }
+  | { id: string; type: "regression"; initialState: RegressionState }
+  | { id: string; type: "statistics"; initialState: StatisticsState }
+  | { id: string; type: "systems"; initialState: SystemState }
+  | { id: string; type: "geometry"; initialOps: GeometryOp[] };
 
 /**
  * Seeds a "graph" block's rows/viewport into `graph` (mirrors
@@ -40,7 +79,19 @@ function seedGraphBlock(graph: CellGraph, blockId: string, block: NotebookGraphB
   graph.set(blockIds.expressionList, rowIds, { auxiliary: true });
 }
 
-/** Converts a decoded/default NotebookState into this component's own Block[] shape, seeding `graph` for graph/value blocks as a side effect. Fresh crypto.randomUUID() ids are assigned here -- block ids aren't part of the serialized shape, only content/order is. */
+/**
+ * Converts a decoded/default NotebookState into this component's own
+ * Block[] shape. For "value"/"graph" blocks this also seeds `graph` as a
+ * side effect (their own mount-time init is guarded by `hasValue`, so
+ * pre-seeding here is safe -- see seedGraphBlock's doc comment). The 6
+ * newer block types do NOT get pre-seeded here: their underlying panel's
+ * own lazy graph construction establishes `graph.define`d cells guarded by
+ * `!graph.has(ids.expr)`, so pre-seeding would skip that setup entirely
+ * (see e.g. NotebookOdeBlock's doc comment) -- each's wrapper component
+ * seeds itself, in a `useEffect` that runs *after* its underlying panel has
+ * already mounted. Fresh crypto.randomUUID() ids are assigned here -- block
+ * ids aren't part of the serialized shape, only content/order is.
+ */
 function hydrateBlocks(graph: CellGraph, state: NotebookState): Block[] {
   return state.blocks.map((b) => {
     const id = crypto.randomUUID();
@@ -49,8 +100,17 @@ function hydrateBlocks(graph: CellGraph, state: NotebookState): Block[] {
       graph.set(notebookValueCellId(b.name), b.value);
       return { id, type: "value", name: b.name, value: b.value };
     }
-    seedGraphBlock(graph, id, b);
-    return { id, type: "graph", initialSource: b.rows[0]?.source ?? "x" };
+    if (b.type === "graph") {
+      seedGraphBlock(graph, id, b);
+      return { id, type: "graph", initialSource: b.rows[0]?.source ?? "x" };
+    }
+    if (b.type === "surface3d") return { id, type: "surface3d", initialExpr: b.expr, initialParams: b.params };
+    if (b.type === "ode") return { id, type: "ode", initialState: b.state };
+    if (b.type === "ode-system") return { id, type: "ode-system", initialState: b.state };
+    if (b.type === "regression") return { id, type: "regression", initialState: b.state };
+    if (b.type === "statistics") return { id, type: "statistics", initialState: b.state };
+    if (b.type === "systems") return { id, type: "systems", initialState: b.state };
+    return { id, type: "geometry", initialOps: b.state.ops };
   });
 }
 
@@ -61,24 +121,45 @@ function getCurrentNotebookState(graph: CellGraph, blocks: Block[]): NotebookSta
     blocks: blocks.map((block): NotebookState["blocks"][number] => {
       if (block.type === "text") return { type: "text", content: block.content };
       if (block.type === "value") return { type: "value", name: block.name, value: block.value };
-      const blockIds = cellIdsNotebookBlock(block.id);
-      const rowIds = graph.hasValue(blockIds.expressionList) ? graph.get<string[]>(blockIds.expressionList) : [];
-      const rows = rowIds.map((rowId) => {
-        const ids = cellIdsMultiRow(rowId);
-        const freeVars = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
+      if (block.type === "graph") {
+        const blockIds = cellIdsNotebookBlock(block.id);
+        const rowIds = graph.hasValue(blockIds.expressionList) ? graph.get<string[]>(blockIds.expressionList) : [];
+        const rows = rowIds.map((rowId) => {
+          const ids = cellIdsMultiRow(rowId);
+          const freeVars = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
+          const params: Record<string, number> = {};
+          for (const name of freeVars) params[name] = graph.get<number>(ids.param(name));
+          return {
+            source: graph.get<string>(ids.expr),
+            color: graph.get<number>(ids.color),
+            visible: graph.get<boolean>(ids.visible),
+            params,
+          };
+        });
+        const viewport = graph.hasValue(blockIds.viewport)
+          ? graph.get<NotebookGraphBlockStateV1["viewport"]>(blockIds.viewport)
+          : { xMin: -10, xMax: 10, yMin: -10, yMax: 10 };
+        return { type: "graph", rows, viewport };
+      }
+      if (block.type === "surface3d") {
+        const ids = cellIds3D(block.id);
+        const names = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
         const params: Record<string, number> = {};
-        for (const name of freeVars) params[name] = graph.get<number>(ids.param(name));
-        return {
-          source: graph.get<string>(ids.expr),
-          color: graph.get<number>(ids.color),
-          visible: graph.get<boolean>(ids.visible),
-          params,
-        };
-      });
-      const viewport = graph.hasValue(blockIds.viewport)
-        ? graph.get<NotebookGraphBlockStateV1["viewport"]>(blockIds.viewport)
-        : { xMin: -10, xMax: 10, yMin: -10, yMax: 10 };
-      return { type: "graph", rows, viewport };
+        for (const name of names) params[name] = graph.get<number>(ids.param(name));
+        return { type: "surface3d", expr: graph.get<string>(ids.expr), params };
+      }
+      if (block.type === "ode") return { type: "ode", state: getCurrentOdeState(graph, cellIdsOde(block.id)) };
+      if (block.type === "ode-system") {
+        return { type: "ode-system", state: getCurrentOdeSystemState(graph, cellIdsOdeSystem(block.id)) };
+      }
+      if (block.type === "regression") {
+        return { type: "regression", state: getCurrentRegressionState(graph, cellIdsRegression(block.id)) };
+      }
+      if (block.type === "statistics") {
+        return { type: "statistics", state: getCurrentStatisticsState(graph, cellIdsStatistics(block.id)) };
+      }
+      if (block.type === "systems") return { type: "systems", state: getCurrentSystemState(graph, cellIdsSystem(block.id)) };
+      return { type: "geometry", state: getCurrentGeometryState(graph, cellIdsGeometry(block.id)) };
     }),
   };
 }
@@ -165,6 +246,37 @@ export function NotebookPanel() {
     setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "graph", initialSource: "x" }]);
   }
 
+  function addSurface3DBlock() {
+    setBlocks((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), type: "surface3d", initialExpr: DEFAULT_SURFACE3D_EXPR, initialParams: {} },
+    ]);
+  }
+
+  function addOdeBlock() {
+    setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "ode", initialState: DEFAULT_ODE_STATE }]);
+  }
+
+  function addOdeSystemBlock() {
+    setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "ode-system", initialState: DEFAULT_ODE_SYSTEM_STATE }]);
+  }
+
+  function addRegressionBlock() {
+    setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "regression", initialState: DEFAULT_REGRESSION_STATE }]);
+  }
+
+  function addStatisticsBlock() {
+    setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "statistics", initialState: DEFAULT_STATISTICS_STATE }]);
+  }
+
+  function addSystemsBlock() {
+    setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "systems", initialState: DEFAULT_SYSTEM_STATE }]);
+  }
+
+  function addGeometryBlock() {
+    setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type: "geometry", initialOps: DEFAULT_GEOMETRY_STATE.ops }]);
+  }
+
   // Single-letter names only: implicit-mult.ts's tokenizer splits any
   // unrecognized multi-letter run into single-char variables multiplied
   // together (see its own doc comment), so a default name like "k1" would
@@ -211,6 +323,34 @@ export function NotebookPanel() {
       }
       graph.delete(blockIds.expressionList);
       graph.delete(blockIds.viewport);
+    } else if (removed?.type === "surface3d") {
+      const ids = cellIds3D(id);
+      const names = graph.hasValue(ids.freeVars) ? graph.get<string[]>(ids.freeVars) : [];
+      for (const name of names) {
+        graph.delete(ids.param(name));
+        graph.delete(ids.track(name));
+      }
+      for (const cellId of Object.values(ids)) {
+        if (typeof cellId === "string") graph.delete(cellId);
+      }
+    } else if (removed?.type === "ode") {
+      for (const cellId of Object.values(cellIdsOde(id))) graph.delete(cellId);
+    } else if (removed?.type === "ode-system") {
+      for (const cellId of Object.values(cellIdsOdeSystem(id))) graph.delete(cellId);
+    } else if (removed?.type === "regression") {
+      for (const cellId of Object.values(cellIdsRegression(id))) graph.delete(cellId);
+    } else if (removed?.type === "statistics") {
+      for (const cellId of Object.values(cellIdsStatistics(id))) graph.delete(cellId);
+    } else if (removed?.type === "systems") {
+      for (const cellId of Object.values(cellIdsSystem(id))) graph.delete(cellId);
+    } else if (removed?.type === "geometry") {
+      // Only the object-list/ops-log cells are namespaced by this block's
+      // id; every individual object cell (point/line/circle/...) is left as
+      // a harmless orphan, matching this codebase's existing tolerance for
+      // orphaned cells on removal (see cellIdsGeometry's own doc comment).
+      const listIds = cellIdsGeometry(id);
+      graph.delete(listIds.objectList);
+      graph.delete(listIds.opsLog);
     }
     setBlocks((prev) => prev.filter((b) => b.id !== id));
   }
@@ -292,6 +432,87 @@ export function NotebookPanel() {
       const id = crypto.randomUUID();
       const initialSource = typeof input.source === "string" && input.source.trim() ? input.source : "x";
       setBlocks((prev) => [...prev, { id, type: "graph", initialSource }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_surface3d_block",
+    description: "Append a 3D-surface block (z = f(x, y)) to the end of the notebook.",
+    inputSchema: {
+      type: "object",
+      properties: { expr: { type: "string", description: `Initial z(x,y) expression (default "${DEFAULT_SURFACE3D_EXPR}").` } },
+    },
+    handler: (input: Record<string, unknown>) => {
+      const id = crypto.randomUUID();
+      const initialExpr = typeof input.expr === "string" && input.expr.trim() ? input.expr : DEFAULT_SURFACE3D_EXPR;
+      setBlocks((prev) => [...prev, { id, type: "surface3d", initialExpr, initialParams: {} }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_ode_block",
+    description: "Append a single-ODE block (dy/dx = f(x,y), plotted against its slope field) to the end of the notebook.",
+    inputSchema: { type: "object", properties: {} },
+    handler: () => {
+      const id = crypto.randomUUID();
+      setBlocks((prev) => [...prev, { id, type: "ode", initialState: DEFAULT_ODE_STATE }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_ode_system_block",
+    description: "Append a coupled-ODE-system block (a phase portrait) to the end of the notebook.",
+    inputSchema: { type: "object", properties: {} },
+    handler: () => {
+      const id = crypto.randomUUID();
+      setBlocks((prev) => [...prev, { id, type: "ode-system", initialState: DEFAULT_ODE_SYSTEM_STATE }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_regression_block",
+    description: "Append a regression block (linear or nonlinear curve fit over a spreadsheet-style row list) to the end of the notebook.",
+    inputSchema: { type: "object", properties: {} },
+    handler: () => {
+      const id = crypto.randomUUID();
+      setBlocks((prev) => [...prev, { id, type: "regression", initialState: DEFAULT_REGRESSION_STATE }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_statistics_block",
+    description: "Append a statistics block (descriptive stats + a distribution probability calculator) to the end of the notebook.",
+    inputSchema: { type: "object", properties: {} },
+    handler: () => {
+      const id = crypto.randomUUID();
+      setBlocks((prev) => [...prev, { id, type: "statistics", initialState: DEFAULT_STATISTICS_STATE }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_systems_block",
+    description: "Append a system-of-equations solver block to the end of the notebook.",
+    inputSchema: { type: "object", properties: {} },
+    handler: () => {
+      const id = crypto.randomUUID();
+      setBlocks((prev) => [...prev, { id, type: "systems", initialState: DEFAULT_SYSTEM_STATE }]);
+      return { id };
+    },
+  });
+
+  useModelContextTool({
+    name: "notebook_add_geometry_block",
+    description: "Append a geometry-construction block (points, lines, circles, transforms) to the end of the notebook.",
+    inputSchema: { type: "object", properties: {} },
+    handler: () => {
+      const id = crypto.randomUUID();
+      setBlocks((prev) => [...prev, { id, type: "geometry", initialOps: DEFAULT_GEOMETRY_STATE.ops }]);
       return { id };
     },
   });
@@ -386,8 +607,22 @@ export function NotebookPanel() {
                   style={{ font: "inherit", width: "10ch" }}
                 />
               </label>
-            ) : (
+            ) : block.type === "graph" ? (
               <NotebookGraphBlock graph={graph} blockId={block.id} initialSource={block.initialSource} />
+            ) : block.type === "surface3d" ? (
+              <NotebookGraph3DBlock graph={graph} blockId={block.id} initialExpr={block.initialExpr} initialParams={block.initialParams} />
+            ) : block.type === "ode" ? (
+              <NotebookOdeBlock graph={graph} blockId={block.id} initialState={block.initialState} />
+            ) : block.type === "ode-system" ? (
+              <NotebookOdeSystemBlock graph={graph} blockId={block.id} initialState={block.initialState} />
+            ) : block.type === "regression" ? (
+              <NotebookRegressionBlock graph={graph} blockId={block.id} initialState={block.initialState} />
+            ) : block.type === "statistics" ? (
+              <NotebookStatisticsBlock graph={graph} blockId={block.id} initialState={block.initialState} />
+            ) : block.type === "systems" ? (
+              <NotebookSystemsBlock graph={graph} blockId={block.id} initialState={block.initialState} />
+            ) : (
+              <NotebookGeometryBlock graph={graph} blockId={block.id} initialOps={block.initialOps} />
             )}
           </div>
           <button type="button" onClick={() => removeBlock(block.id)} title="Remove this block">
@@ -401,6 +636,27 @@ export function NotebookPanel() {
         </button>
         <button type="button" onClick={addGraphBlock}>
           + Graph block
+        </button>
+        <button type="button" onClick={addSurface3DBlock}>
+          + 3D surface block
+        </button>
+        <button type="button" onClick={addOdeBlock}>
+          + ODE block
+        </button>
+        <button type="button" onClick={addOdeSystemBlock}>
+          + ODE system block
+        </button>
+        <button type="button" onClick={addRegressionBlock}>
+          + Regression block
+        </button>
+        <button type="button" onClick={addStatisticsBlock}>
+          + Statistics block
+        </button>
+        <button type="button" onClick={addSystemsBlock}>
+          + Systems block
+        </button>
+        <button type="button" onClick={addGeometryBlock}>
+          + Geometry block
         </button>
         <button type="button" onClick={addValueBlock}>
           + Value block

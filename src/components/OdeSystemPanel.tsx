@@ -1,7 +1,8 @@
 import type { Path2D } from "mallory-math";
 import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { CellGraph } from "../lib/cell-graph.ts";
-import { cellIdsOdeSystem } from "../lib/cell-ids.ts";
+import { cellIdsOdeSystem, type CellIdsOdeSystem } from "../lib/cell-ids.ts";
 import { drawPath, drawPoint, drawVectorField, type Viewport } from "../lib/render-path.ts";
 import {
   odeSystemTrajectoryToPhasePath,
@@ -10,6 +11,8 @@ import {
   type OdeSystemSpec,
   type VectorFieldPoint,
 } from "../lib/sample-ode.ts";
+import { DEFAULT_ODE_SYSTEM_STATE, decodeOdeSystemState, encodeOdeSystemState, type OdeSystemState } from "../lib/ode-system-state.ts";
+import { saveGraph } from "../lib/saved-graphs.ts";
 import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useCell } from "../lib/use-cell.ts";
 
@@ -19,47 +22,55 @@ type VectorFieldResult = { ok: true; points: VectorFieldPoint[] } | { ok: false;
 const WIDTH = 500;
 const HEIGHT = 500;
 
-// A normalized predator-prey pair (dx/dt = x(1-y), dy/dt = y(x-1)) -- a
-// classic closed-orbit phase portrait, a more illustrative default than an
-// uncoupled pair for a feature whose whole point is the coupling.
-const DEFAULTS = {
-  exprX: "x*(1-y)",
-  exprY: "y*(x-1)",
-  t0: "0",
-  x0: "2",
-  y0: "1",
-  tMin: "0",
-  tMax: "15",
-  xMin: "0",
-  xMax: "3",
-  yMin: "0",
-  yMax: "3",
-};
+/** Writes a state's fields onto `graph`'s free cells -- shared by useOdeSystemGraph's own hydrate-from-hash and a notebook block's post-mount overwrite. */
+export function seedOdeSystemState(graph: CellGraph, ids: CellIdsOdeSystem, state: OdeSystemState): void {
+  graph.set(ids.exprX, state.exprX);
+  graph.set(ids.exprY, state.exprY);
+  graph.set(ids.t0, state.t0);
+  graph.set(ids.x0, state.x0);
+  graph.set(ids.y0, state.y0);
+  graph.set(ids.tMin, state.tMin);
+  graph.set(ids.tMax, state.tMax);
+  graph.set(ids.xMin, state.xMin);
+  graph.set(ids.xMax, state.xMax);
+  graph.set(ids.yMin, state.yMin);
+  graph.set(ids.yMax, state.yMax);
+}
+
+/** Builds the full serializable state of an ODE-system panel -- shared by the URL-sync effect and the save-to-gallery handler. */
+export function getCurrentOdeSystemState(graph: CellGraph, ids: CellIdsOdeSystem): OdeSystemState {
+  return {
+    v: 1,
+    exprX: graph.get<string>(ids.exprX),
+    exprY: graph.get<string>(ids.exprY),
+    t0: graph.get<string>(ids.t0),
+    x0: graph.get<string>(ids.x0),
+    y0: graph.get<string>(ids.y0),
+    tMin: graph.get<string>(ids.tMin),
+    tMax: graph.get<string>(ids.tMax),
+    xMin: graph.get<string>(ids.xMin),
+    xMax: graph.get<string>(ids.xMax),
+    yMin: graph.get<string>(ids.yMin),
+    yMax: graph.get<string>(ids.yMax),
+  };
+}
 
 /**
- * Sets up the ODE-system panel's reactive cells on its own private
- * CellGraph -- two coupled expressions plus an initial condition, a
- * t-domain, and a phase-plane viewport, yet another shape distinct from
- * every other panel's, so (like OdePanel/SystemSolverPanel) it isn't woven
- * into `cellIds`/`useExpressionGraph`.
+ * Sets up the ODE-system panel's reactive cells -- two coupled expressions
+ * plus an initial condition, a t-domain, and a phase-plane viewport, yet
+ * another shape distinct from every other panel's, so (like
+ * OdePanel/SystemSolverPanel) it isn't woven into `cellIds`/
+ * `useExpressionGraph`. Shares an `externalGraph` when supplied instead of
+ * creating a private one, mirroring OdePanel's `useOdeGraph`.
  */
-function useOdeSystemGraph(cellId: string): CellGraph {
+function useOdeSystemGraph(cellId: string, externalGraph?: CellGraph): CellGraph {
   const ref = useRef<CellGraph | null>(null);
   if (!ref.current) {
-    const graph = new CellGraph();
+    const graph = externalGraph ?? new CellGraph();
     const ids = cellIdsOdeSystem(cellId);
     if (!graph.has(ids.exprX)) {
-      graph.set(ids.exprX, DEFAULTS.exprX);
-      graph.set(ids.exprY, DEFAULTS.exprY);
-      graph.set(ids.t0, DEFAULTS.t0);
-      graph.set(ids.x0, DEFAULTS.x0);
-      graph.set(ids.y0, DEFAULTS.y0);
-      graph.set(ids.tMin, DEFAULTS.tMin);
-      graph.set(ids.tMax, DEFAULTS.tMax);
-      graph.set(ids.xMin, DEFAULTS.xMin);
-      graph.set(ids.xMax, DEFAULTS.xMax);
-      graph.set(ids.yMin, DEFAULTS.yMin);
-      graph.set(ids.yMax, DEFAULTS.yMax);
+      const decoded = !externalGraph && typeof window !== "undefined" ? decodeOdeSystemState(window.location.hash.slice(1)) : null;
+      seedOdeSystemState(graph, ids, decoded ?? DEFAULT_ODE_SYSTEM_STATE);
 
       const spec = (): OdeSystemSpec => ({
         stateVars: ["x", "y"],
@@ -107,6 +118,10 @@ function useOdeSystemGraph(cellId: string): CellGraph {
 
 export interface OdeSystemPanelProps {
   cellId?: string;
+  /** Share an existing CellGraph (e.g. from a notebook block) instead of creating a private one. */
+  graph?: CellGraph;
+  /** Hydrate from and write to the URL fragment. Off for a notebook-embedded instance, whose document owns persistence instead. */
+  syncUrl?: boolean;
 }
 
 /**
@@ -117,9 +132,10 @@ export interface OdeSystemPanelProps {
  * on a direction field sampled at t0). No animation/dragging, no
  * multi-trajectory overlay.
  */
-export function OdeSystemPanel({ cellId = "ode-system-1" }: OdeSystemPanelProps = {}) {
-  const graph = useOdeSystemGraph(cellId);
-  useCellGraphTools("calculus_ode_system", graph);
+export function OdeSystemPanel({ cellId = "ode-system-1", graph: externalGraph, syncUrl = true }: OdeSystemPanelProps = {}) {
+  const graph = useOdeSystemGraph(cellId, externalGraph);
+  // Namespaced by cellId, same collision-avoidance fix as OdePanel's.
+  useCellGraphTools(`calculus_ode_system_${cellId}`, graph);
   const ids = cellIdsOdeSystem(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -139,6 +155,40 @@ export function OdeSystemPanel({ cellId = "ode-system-1" }: OdeSystemPanelProps 
 
   const [exprXInput, setExprXInput] = useState(exprX);
   const [exprYInput, setExprYInput] = useState(exprY);
+  // Keeps the input boxes in sync when exprX/exprY change for a reason
+  // other than typing in these boxes -- e.g. URL-hash hydration -- mirrors
+  // GraphCanvas's identically-reasoned effect.
+  useEffect(() => {
+    setExprXInput(exprX);
+  }, [exprX]);
+  useEffect(() => {
+    setExprYInput(exprY);
+  }, [exprY]);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveGraphFn = useServerFn(saveGraph);
+
+  async function handleSave() {
+    const title = window.prompt("Title for this saved ODE system:", "Untitled");
+    if (title === null) return;
+    setSaveStatus("Saving…");
+    try {
+      await saveGraphFn({ data: { title, kind: "ode-system", state: getCurrentOdeSystemState(graph, ids) } });
+      setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
+    } catch (e) {
+      setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Keep the URL fragment in sync with the live graph state, mirroring OdePanel's pattern.
+  useEffect(() => {
+    if (!syncUrl) return;
+    function writeUrl() {
+      window.history.replaceState(null, "", `#${encodeOdeSystemState(getCurrentOdeSystemState(graph, ids))}`);
+    }
+    writeUrl();
+    return graph.subscribeAll(writeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, syncUrl]);
 
   function updateExprX(value: string) {
     setExprXInput(value);
@@ -214,6 +264,14 @@ export function OdeSystemPanel({ cellId = "ode-system-1" }: OdeSystemPanelProps 
       )}
       {(!trajectory.ok || !vectorField.ok) && (
         <p style={{ color: "crimson" }}>{!trajectory.ok ? trajectory.message : !vectorField.ok ? vectorField.message : ""}</p>
+      )}
+      {syncUrl && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <button type="button" onClick={handleSave}>
+            Save to gallery
+          </button>
+          {saveStatus && <p style={{ fontSize: "0.85rem", color: "#5b6b8c", margin: "0.25rem 0" }}>{saveStatus}</p>}
+        </div>
       )}
     </div>
   );

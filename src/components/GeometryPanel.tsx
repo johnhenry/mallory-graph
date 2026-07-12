@@ -1,10 +1,20 @@
 import { type PointerEvent, useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { AlgebraView } from "./AlgebraView.tsx";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { interiorAngleRadians, isSelfIntersecting, polygonCentroid, shoelaceArea } from "../lib/geometry.ts";
 import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useModelContextTool } from "../hooks/use-model-context-tool.ts";
 import { canvasEventPoint, toDataX, toDataY, toScreenX, toScreenY, type Viewport } from "../lib/viewport.ts";
+import { cellIdsGeometry, type CellIdsGeometry } from "../lib/cell-ids.ts";
+import {
+  DEFAULT_GEOMETRY_STATE,
+  decodeGeometryState,
+  encodeGeometryState,
+  type GeometryOp,
+  type GeometryState,
+} from "../lib/geometry-state.ts";
+import { saveGraph } from "../lib/saved-graphs.ts";
 
 const WIDTH = 500;
 const HEIGHT = 500;
@@ -22,9 +32,13 @@ const HIT_RADIUS_PX = 14;
 const DEGENERATE_EPSILON = 0.05;
 const DEGENERATE_COLOR = "#d97706";
 
-// Not namespaced by any cellId -- this is a single-instance panel, unlike
-// GraphCanvasMulti's rows.
-const OBJECT_LIST_CELL = "geomObjects";
+// Only the object-list and ops-log cells are namespaced per instance (via
+// cellIdsGeometry(cellId), passed around as `listIds` below) -- every
+// individual object cell (point/line/circle/...) is already keyed by its own
+// crypto.randomUUID() object id, globally unique regardless of which
+// construction created it, so it needs no further namespacing (same
+// reasoning cellIdsNotebookBlock's rows -- via cellIdsMultiRow -- don't
+// namespace by block either).
 const pointCellId = (id: string) => `geomPoint:${id}`;
 const lineCellId = (id: string) => `geomLine:${id}`;
 const circleCellId = (id: string) => `geomCircle:${id}`;
@@ -74,25 +88,81 @@ type Tool = "point" | "line" | "circle" | "reflect" | "rotate" | "translate" | "
  * construction), reading its source point(s) live -- dragging a free point
  * cascades through every line/circle/transform built from it, for free.
  */
-function useGeometryGraph(): CellGraph {
+/** Builds the full serializable state of one geometry construction -- shared by the URL-sync effect and the save-to-gallery handler. */
+export function getCurrentGeometryState(graph: CellGraph, listIds: CellIdsGeometry): GeometryState {
+  return { v: 1, ops: graph.has(listIds.opsLog) ? graph.get<GeometryOp[]>(listIds.opsLog) : [] };
+}
+
+/** Replays a construction log in order through the real add* functions, reconstructing every free AND dependent (reflect/rotate/translate/scale) point exactly as it was built interactively. */
+export function replayGeometryOps(graph: CellGraph, listIds: CellIdsGeometry, ops: GeometryOp[]): void {
+  for (const op of ops) {
+    switch (op.tool) {
+      case "point":
+        addPoint(graph, listIds, op.x, op.y, op.id);
+        break;
+      case "line":
+        addLine(graph, listIds, op.a, op.b, op.id);
+        break;
+      case "circle":
+        addCircle(graph, listIds, op.center, op.radiusPoint, op.id);
+        break;
+      case "reflection":
+        addReflection(graph, listIds, op.source, op.center, op.id);
+        break;
+      case "rotation":
+        addRotation(graph, listIds, op.source, op.center, op.angleDegrees, op.id);
+        break;
+      case "translation":
+        addTranslation(graph, listIds, op.source, op.dx, op.dy, op.id);
+        break;
+      case "scale":
+        addScale(graph, listIds, op.source, op.center, op.factor, op.id);
+        break;
+      case "angle":
+        addAngle(graph, listIds, op.a, op.vertex, op.c, op.id);
+        break;
+      case "polygon":
+        addPolygon(graph, listIds, op.points, op.id);
+        break;
+    }
+  }
+}
+
+/**
+ * Shares an `externalGraph` when supplied (e.g. a notebook block) instead of
+ * creating a private one, mirroring Graph3DCanvas's `useExpressionGraph3D`.
+ * URL-hash hydration (replaying a saved construction log) only applies to
+ * the standalone, private-graph case, since an external graph's owner
+ * (NotebookPanel) is responsible for its own seeding.
+ */
+function useGeometryGraph(listIds: CellIdsGeometry, externalGraph?: CellGraph): CellGraph {
   const ref = useRef<CellGraph | null>(null);
   if (!ref.current) {
-    const graph = new CellGraph();
-    graph.set(OBJECT_LIST_CELL, [] as string[], { auxiliary: true });
+    const graph = externalGraph ?? new CellGraph();
+    if (!graph.has(listIds.objectList)) {
+      graph.set(listIds.objectList, [] as string[], { auxiliary: true });
+      graph.set(listIds.opsLog, [] as GeometryOp[], { auxiliary: true });
+      const decoded = !externalGraph && typeof window !== "undefined" ? decodeGeometryState(window.location.hash.slice(1)) : null;
+      if (decoded) replayGeometryOps(graph, listIds, decoded.ops);
+    }
     ref.current = graph;
   }
   return ref.current;
 }
 
-function pushObject(graph: CellGraph, id: string): void {
-  graph.set(OBJECT_LIST_CELL, [...graph.get<string[]>(OBJECT_LIST_CELL), id], { auxiliary: true });
+function pushObject(graph: CellGraph, listIds: CellIdsGeometry, id: string): void {
+  graph.set(listIds.objectList, [...graph.get<string[]>(listIds.objectList), id], { auxiliary: true });
+}
+
+function pushOp(graph: CellGraph, listIds: CellIdsGeometry, op: GeometryOp): void {
+  graph.set(listIds.opsLog, [...graph.get<GeometryOp[]>(listIds.opsLog), op], { auxiliary: true });
 }
 
 /** Nearest point within `maxDistance`, optionally restricted to free (draggable) points -- a dependent/transformed point is still a valid line/circle/transform endpoint, just not draggable itself. */
-function nearestPointId(graph: CellGraph, x: number, y: number, maxDistance: number, freeOnly = false): string | null {
+function nearestPointId(graph: CellGraph, listIds: CellIdsGeometry, x: number, y: number, maxDistance: number, freeOnly = false): string | null {
   let best: string | null = null;
   let bestDist = maxDistance;
-  for (const id of graph.get<string[]>(OBJECT_LIST_CELL)) {
+  for (const id of graph.get<string[]>(listIds.objectList)) {
     if (!graph.has(pointCellId(id))) continue;
     if (freeOnly && graph.role(pointCellId(id)) !== "free") continue;
     const p = graph.get<PointRecord>(pointCellId(id));
@@ -105,8 +175,156 @@ function nearestPointId(graph: CellGraph, x: number, y: number, maxDistance: num
   return best;
 }
 
-export function GeometryPanel() {
-  const graph = useGeometryGraph();
+function addPoint(graph: CellGraph, listIds: CellIdsGeometry, x: number, y: number, id: string = crypto.randomUUID()): string {
+  graph.set(pointCellId(id), { x, y });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "point", id, x, y });
+  return id;
+}
+
+function addLine(graph: CellGraph, listIds: CellIdsGeometry, a: string, b: string, id: string = crypto.randomUUID()): void {
+  graph.set(lineCellId(id), { a, b });
+  graph.define(lengthCellId(id), () => {
+    const pa = graph.get<PointRecord>(pointCellId(a));
+    const pb = graph.get<PointRecord>(pointCellId(b));
+    return Math.hypot(pa.x - pb.x, pa.y - pb.y);
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "line", id, a, b });
+}
+
+function addCircle(graph: CellGraph, listIds: CellIdsGeometry, center: string, radiusPoint: string, id: string = crypto.randomUUID()): void {
+  graph.set(circleCellId(id), { center, radiusPoint });
+  graph.define(radiusCellId(id), () => {
+    const pc = graph.get<PointRecord>(pointCellId(center));
+    const pr = graph.get<PointRecord>(pointCellId(radiusPoint));
+    return Math.hypot(pc.x - pr.x, pc.y - pr.y);
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "circle", id, center, radiusPoint });
+}
+
+/** Point reflection: the new point is as far past `center` as `source` is before it. */
+function addReflection(graph: CellGraph, listIds: CellIdsGeometry, source: string, center: string, id: string = crypto.randomUUID()): void {
+  graph.define(pointCellId(id), (): PointRecord => {
+    const s = graph.get<PointRecord>(pointCellId(source));
+    const c = graph.get<PointRecord>(pointCellId(center));
+    return { x: 2 * c.x - s.x, y: 2 * c.y - s.y };
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "reflection", id, source, center });
+}
+
+/** Rotates `source` around `center` by a fixed angle, captured at construction time (the source/center dependency stays live; the angle itself does not). */
+function addRotation(
+  graph: CellGraph,
+  listIds: CellIdsGeometry,
+  source: string,
+  center: string,
+  angleDegrees: number,
+  id: string = crypto.randomUUID(),
+): void {
+  const theta = (angleDegrees * Math.PI) / 180;
+  graph.define(pointCellId(id), (): PointRecord => {
+    const s = graph.get<PointRecord>(pointCellId(source));
+    const c = graph.get<PointRecord>(pointCellId(center));
+    const dx = s.x - c.x;
+    const dy = s.y - c.y;
+    return {
+      x: c.x + dx * Math.cos(theta) - dy * Math.sin(theta),
+      y: c.y + dx * Math.sin(theta) + dy * Math.cos(theta),
+    };
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "rotation", id, source, center, angleDegrees });
+}
+
+/** Translates `source` by a fixed (dx, dy), captured at construction time -- the source dependency stays live. */
+function addTranslation(
+  graph: CellGraph,
+  listIds: CellIdsGeometry,
+  source: string,
+  dx: number,
+  dy: number,
+  id: string = crypto.randomUUID(),
+): void {
+  graph.define(pointCellId(id), (): PointRecord => {
+    const s = graph.get<PointRecord>(pointCellId(source));
+    return { x: s.x + dx, y: s.y + dy };
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "translation", id, source, dx, dy });
+}
+
+/** Scales `source` about `center` by a fixed factor, captured at construction time -- the source/center dependency stays live. */
+function addScale(
+  graph: CellGraph,
+  listIds: CellIdsGeometry,
+  source: string,
+  center: string,
+  factor: number,
+  id: string = crypto.randomUUID(),
+): void {
+  graph.define(pointCellId(id), (): PointRecord => {
+    const s = graph.get<PointRecord>(pointCellId(source));
+    const c = graph.get<PointRecord>(pointCellId(center));
+    return { x: c.x + factor * (s.x - c.x), y: c.y + factor * (s.y - c.y) };
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "scale", id, source, center, factor });
+}
+
+/** Interior angle ABC at `vertex`, reading all three points live -- same record/dependent-value split as Line/Circle. */
+function addAngle(graph: CellGraph, listIds: CellIdsGeometry, a: string, vertex: string, c: string, id: string = crypto.randomUUID()): void {
+  graph.set(angleRecordCellId(id), { a, vertex, c } as AngleRecord);
+  graph.define(angleValueCellId(id), (): number => {
+    const pa = graph.get<PointRecord>(pointCellId(a));
+    const pv = graph.get<PointRecord>(pointCellId(vertex));
+    const pc = graph.get<PointRecord>(pointCellId(c));
+    return interiorAngleRadians(pa, pv, pc);
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "angle", id, a, vertex, c });
+}
+
+/**
+ * An ordered vertex loop, closed by re-clicking the first vertex -- area
+ * via the shoelace formula, reading every point live. The
+ * self-intersection flag is its own dependent cell (the same declarative
+ * "condition read off a dependent cell, decoupled from drawing" pattern
+ * the degenerate line/circle flags use), so it recomputes live as
+ * vertices drag and shows up in the Objects list alongside the area.
+ * Note the shoelace number is only a meaningful "area" when this flag is
+ * false -- the flag is the caveat, per this panel's flag-don't-block
+ * convention (a degenerate line isn't prevented either, just recolored).
+ */
+function addPolygon(graph: CellGraph, listIds: CellIdsGeometry, points: string[], id: string = crypto.randomUUID()): void {
+  graph.set(polygonCellId(id), { points } as PolygonRecord);
+  graph.define(areaCellId(id), (): number => {
+    const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
+    return shoelaceArea(pts);
+  });
+  graph.define(polygonSelfIntersectingCellId(id), (): boolean => {
+    const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
+    return isSelfIntersecting(pts);
+  });
+  pushObject(graph, listIds, id);
+  pushOp(graph, listIds, { tool: "polygon", id, points });
+}
+
+export interface GeometryPanelProps {
+  /** Share an existing CellGraph (e.g. from a notebook block) instead of creating a private one. */
+  graph?: CellGraph;
+  /** Hydrate from and write to the URL fragment. Off for a notebook-embedded instance, whose document owns persistence instead. */
+  syncUrl?: boolean;
+  /** Namespaces this construction's object-list/ops-log cells and WebMCP tool names (e.g. a notebook block's own id), so more than one construction can share a CellGraph. Defaults to a stable single-instance value for the standalone page. */
+  cellId?: string;
+}
+
+export function GeometryPanel({ graph: externalGraph, syncUrl = true, cellId = "geo-1" }: GeometryPanelProps = {}) {
+  const listIds = cellIdsGeometry(cellId);
+  const graph = useGeometryGraph(listIds, externalGraph);
+  const toolPrefix = `geometry_${cellId}`;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [tool, setTool] = useState<Tool>("point");
   const [pending, setPending] = useState<string | null>(null);
@@ -122,123 +340,33 @@ export function GeometryPanel() {
   const [factorInput, setFactorInput] = useState("2");
   const dragRef = useRef<{ id: string; moved: boolean } | null>(null);
 
-  useCellGraphTools("geometry", graph);
+  useCellGraphTools(toolPrefix, graph);
 
-  function addPoint(x: number, y: number): string {
-    const id = crypto.randomUUID();
-    graph.set(pointCellId(id), { x, y });
-    pushObject(graph, id);
-    return id;
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveGraphFn = useServerFn(saveGraph);
+
+  async function handleSave() {
+    const title = window.prompt("Title for this saved construction:", "Untitled");
+    if (title === null) return;
+    setSaveStatus("Saving…");
+    try {
+      await saveGraphFn({ data: { title, kind: "geometry", state: getCurrentGeometryState(graph, listIds) } });
+      setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
+    } catch (e) {
+      setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
-  function addLine(a: string, b: string): void {
-    const id = crypto.randomUUID();
-    graph.set(lineCellId(id), { a, b });
-    graph.define(lengthCellId(id), () => {
-      const pa = graph.get<PointRecord>(pointCellId(a));
-      const pb = graph.get<PointRecord>(pointCellId(b));
-      return Math.hypot(pa.x - pb.x, pa.y - pb.y);
-    });
-    pushObject(graph, id);
-  }
-
-  function addCircle(center: string, radiusPoint: string): void {
-    const id = crypto.randomUUID();
-    graph.set(circleCellId(id), { center, radiusPoint });
-    graph.define(radiusCellId(id), () => {
-      const pc = graph.get<PointRecord>(pointCellId(center));
-      const pr = graph.get<PointRecord>(pointCellId(radiusPoint));
-      return Math.hypot(pc.x - pr.x, pc.y - pr.y);
-    });
-    pushObject(graph, id);
-  }
-
-  /** Point reflection: the new point is as far past `center` as `source` is before it. */
-  function addReflection(source: string, center: string): void {
-    const id = crypto.randomUUID();
-    graph.define(pointCellId(id), (): PointRecord => {
-      const s = graph.get<PointRecord>(pointCellId(source));
-      const c = graph.get<PointRecord>(pointCellId(center));
-      return { x: 2 * c.x - s.x, y: 2 * c.y - s.y };
-    });
-    pushObject(graph, id);
-  }
-
-  /** Rotates `source` around `center` by a fixed angle, captured at construction time (the source/center dependency stays live; the angle itself does not). */
-  function addRotation(source: string, center: string, angleDegrees: number): void {
-    const id = crypto.randomUUID();
-    const theta = (angleDegrees * Math.PI) / 180;
-    graph.define(pointCellId(id), (): PointRecord => {
-      const s = graph.get<PointRecord>(pointCellId(source));
-      const c = graph.get<PointRecord>(pointCellId(center));
-      const dx = s.x - c.x;
-      const dy = s.y - c.y;
-      return {
-        x: c.x + dx * Math.cos(theta) - dy * Math.sin(theta),
-        y: c.y + dx * Math.sin(theta) + dy * Math.cos(theta),
-      };
-    });
-    pushObject(graph, id);
-  }
-
-  /** Translates `source` by a fixed (dx, dy), captured at construction time -- the source dependency stays live. */
-  function addTranslation(source: string, dx: number, dy: number): void {
-    const id = crypto.randomUUID();
-    graph.define(pointCellId(id), (): PointRecord => {
-      const s = graph.get<PointRecord>(pointCellId(source));
-      return { x: s.x + dx, y: s.y + dy };
-    });
-    pushObject(graph, id);
-  }
-
-  /** Scales `source` about `center` by a fixed factor, captured at construction time -- the source/center dependency stays live. */
-  function addScale(source: string, center: string, factor: number): void {
-    const id = crypto.randomUUID();
-    graph.define(pointCellId(id), (): PointRecord => {
-      const s = graph.get<PointRecord>(pointCellId(source));
-      const c = graph.get<PointRecord>(pointCellId(center));
-      return { x: c.x + factor * (s.x - c.x), y: c.y + factor * (s.y - c.y) };
-    });
-    pushObject(graph, id);
-  }
-
-  /** Interior angle ABC at `vertex`, reading all three points live -- same record/dependent-value split as Line/Circle. */
-  function addAngle(a: string, vertex: string, c: string): void {
-    const id = crypto.randomUUID();
-    graph.set(angleRecordCellId(id), { a, vertex, c } as AngleRecord);
-    graph.define(angleValueCellId(id), (): number => {
-      const pa = graph.get<PointRecord>(pointCellId(a));
-      const pv = graph.get<PointRecord>(pointCellId(vertex));
-      const pc = graph.get<PointRecord>(pointCellId(c));
-      return interiorAngleRadians(pa, pv, pc);
-    });
-    pushObject(graph, id);
-  }
-
-  /**
-   * An ordered vertex loop, closed by re-clicking the first vertex -- area
-   * via the shoelace formula, reading every point live. The
-   * self-intersection flag is its own dependent cell (the same declarative
-   * "condition read off a dependent cell, decoupled from drawing" pattern
-   * the degenerate line/circle flags use), so it recomputes live as
-   * vertices drag and shows up in the Objects list alongside the area.
-   * Note the shoelace number is only a meaningful "area" when this flag is
-   * false -- the flag is the caveat, per this panel's flag-don't-block
-   * convention (a degenerate line isn't prevented either, just recolored).
-   */
-  function addPolygon(points: string[]): void {
-    const id = crypto.randomUUID();
-    graph.set(polygonCellId(id), { points } as PolygonRecord);
-    graph.define(areaCellId(id), (): number => {
-      const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
-      return shoelaceArea(pts);
-    });
-    graph.define(polygonSelfIntersectingCellId(id), (): boolean => {
-      const pts = points.map((pid) => graph.get<PointRecord>(pointCellId(pid)));
-      return isSelfIntersecting(pts);
-    });
-    pushObject(graph, id);
-  }
+  // Keep the URL fragment in sync with the live construction log, mirroring OdePanel's pattern.
+  useEffect(() => {
+    if (!syncUrl) return;
+    function writeUrl() {
+      window.history.replaceState(null, "", `#${encodeGeometryState(getCurrentGeometryState(graph, listIds))}`);
+    }
+    writeUrl();
+    return graph.subscribeAll(writeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, syncUrl]);
 
   // One WebMCP tool per construction, each a thin wrapper over the function
   // above -- these already take data coordinates/point ids directly (not
@@ -248,18 +376,18 @@ export function GeometryPanel() {
   // object's id, so an agent can chain calls: add two points, then a line
   // between the returned ids.
   useModelContextTool({
-    name: "geometry_add_point",
+    name: `${toolPrefix}_add_point`,
     description: "Add a free point at (x, y). Returns the new point's id, for use as `a`/`b`/`source`/`center`/etc. in later geometry_add_* calls.",
     inputSchema: {
       type: "object",
       properties: { x: { type: "number" }, y: { type: "number" } },
       required: ["x", "y"],
     },
-    handler: (input: Record<string, unknown>) => ({ id: addPoint(Number(input.x), Number(input.y)) }),
+    handler: (input: Record<string, unknown>) => ({ id: addPoint(graph, listIds, Number(input.x), Number(input.y)) }),
   });
 
   useModelContextTool({
-    name: "geometry_add_line",
+    name: `${toolPrefix}_add_line`,
     description: "Add a line through two existing points (by id, as returned from geometry_add_point or geomObjects).",
     inputSchema: {
       type: "object",
@@ -267,13 +395,13 @@ export function GeometryPanel() {
       required: ["a", "b"],
     },
     handler: (input: Record<string, unknown>) => {
-      addLine(String(input.a), String(input.b));
+      addLine(graph, listIds, String(input.a), String(input.b));
       return { ok: true };
     },
   });
 
   useModelContextTool({
-    name: "geometry_add_circle",
+    name: `${toolPrefix}_add_circle`,
     description: "Add a circle centered at one existing point, passing through another (both by id).",
     inputSchema: {
       type: "object",
@@ -281,13 +409,13 @@ export function GeometryPanel() {
       required: ["center", "radiusPoint"],
     },
     handler: (input: Record<string, unknown>) => {
-      addCircle(String(input.center), String(input.radiusPoint));
+      addCircle(graph, listIds, String(input.center), String(input.radiusPoint));
       return { ok: true };
     },
   });
 
   useModelContextTool({
-    name: "geometry_add_reflection",
+    name: `${toolPrefix}_add_reflection`,
     description: "Add a point reflection of `source` through `center` (both existing point ids).",
     inputSchema: {
       type: "object",
@@ -295,13 +423,13 @@ export function GeometryPanel() {
       required: ["source", "center"],
     },
     handler: (input: Record<string, unknown>) => {
-      addReflection(String(input.source), String(input.center));
+      addReflection(graph, listIds, String(input.source), String(input.center));
       return { ok: true };
     },
   });
 
   useModelContextTool({
-    name: "geometry_add_rotation",
+    name: `${toolPrefix}_add_rotation`,
     description: "Rotate `source` around `center` by a fixed angle in degrees (both existing point ids).",
     inputSchema: {
       type: "object",
@@ -309,13 +437,13 @@ export function GeometryPanel() {
       required: ["source", "center", "angleDegrees"],
     },
     handler: (input: Record<string, unknown>) => {
-      addRotation(String(input.source), String(input.center), Number(input.angleDegrees));
+      addRotation(graph, listIds, String(input.source), String(input.center), Number(input.angleDegrees));
       return { ok: true };
     },
   });
 
   useModelContextTool({
-    name: "geometry_add_translation",
+    name: `${toolPrefix}_add_translation`,
     description: "Translate `source` by a fixed (dx, dy) (source is an existing point id).",
     inputSchema: {
       type: "object",
@@ -323,13 +451,13 @@ export function GeometryPanel() {
       required: ["source", "dx", "dy"],
     },
     handler: (input: Record<string, unknown>) => {
-      addTranslation(String(input.source), Number(input.dx), Number(input.dy));
+      addTranslation(graph, listIds, String(input.source), Number(input.dx), Number(input.dy));
       return { ok: true };
     },
   });
 
   useModelContextTool({
-    name: "geometry_add_scale",
+    name: `${toolPrefix}_add_scale`,
     description: "Scale `source` about `center` by a fixed factor (both existing point ids).",
     inputSchema: {
       type: "object",
@@ -337,13 +465,13 @@ export function GeometryPanel() {
       required: ["source", "center", "factor"],
     },
     handler: (input: Record<string, unknown>) => {
-      addScale(String(input.source), String(input.center), Number(input.factor));
+      addScale(graph, listIds, String(input.source), String(input.center), Number(input.factor));
       return { ok: true };
     },
   });
 
   useModelContextTool({
-    name: "geometry_add_angle",
+    name: `${toolPrefix}_add_angle`,
     description: "Measure the interior angle at `vertex` between rays to `a` and `c` (all existing point ids).",
     inputSchema: {
       type: "object",
@@ -351,13 +479,13 @@ export function GeometryPanel() {
       required: ["a", "vertex", "c"],
     },
     handler: (input: Record<string, unknown>) => {
-      addAngle(String(input.a), String(input.vertex), String(input.c));
+      addAngle(graph, listIds, String(input.a), String(input.vertex), String(input.c));
       return { ok: true };
     },
   });
 
   useModelContextTool({
-    name: "geometry_add_polygon",
+    name: `${toolPrefix}_add_polygon`,
     description: "Add a polygon through an ordered list of existing point ids (closed automatically back to the first).",
     inputSchema: {
       type: "object",
@@ -367,7 +495,7 @@ export function GeometryPanel() {
     handler: (input: Record<string, unknown>) => {
       const points = input.points;
       if (!Array.isArray(points) || points.length < 3) throw new Error("points must be an array of at least 3 point ids.");
-      addPolygon(points.map(String));
+      addPolygon(graph, listIds, points.map(String));
       return { ok: true };
     },
   });
@@ -381,7 +509,7 @@ export function GeometryPanel() {
   function handlePointClick(hitId: string) {
     if (tool === "point") return; // clicking an existing point with the Point tool is a no-op; drag it instead
     if (tool === "translate") {
-      addTranslation(hitId, Number(dxInput) || 0, Number(dyInput) || 0);
+      addTranslation(graph, listIds, hitId, Number(dxInput) || 0, Number(dyInput) || 0);
       return;
     }
     if (tool === "angle") {
@@ -389,14 +517,14 @@ export function GeometryPanel() {
       if (next.length < 3) {
         setPendingAngle(next);
       } else {
-        addAngle(next[0] as string, next[1] as string, next[2] as string);
+        addAngle(graph, listIds, next[0] as string, next[1] as string, next[2] as string);
         setPendingAngle([]);
       }
       return;
     }
     if (tool === "polygon") {
       if (pendingPolygon.length >= 3 && hitId === pendingPolygon[0]) {
-        addPolygon(pendingPolygon);
+        addPolygon(graph, listIds, pendingPolygon);
         setPendingPolygon([]);
         return;
       }
@@ -412,23 +540,23 @@ export function GeometryPanel() {
       setPending(null); // clicked the same point twice -- cancel the pending selection
       return;
     }
-    if (tool === "line") addLine(pending, hitId);
-    else if (tool === "circle") addCircle(pending, hitId);
-    else if (tool === "reflect") addReflection(pending, hitId);
-    else if (tool === "rotate") addRotation(pending, hitId, Number(angleInput) || 90);
-    else if (tool === "scale") addScale(pending, hitId, Number(factorInput) || 2);
+    if (tool === "line") addLine(graph, listIds, pending, hitId);
+    else if (tool === "circle") addCircle(graph, listIds, pending, hitId);
+    else if (tool === "reflect") addReflection(graph, listIds, pending, hitId);
+    else if (tool === "rotate") addRotation(graph, listIds, pending, hitId, Number(angleInput) || 90);
+    else if (tool === "scale") addScale(graph, listIds, pending, hitId, Number(factorInput) || 2);
     setPending(null);
   }
 
   function handleEmptyClick(x: number, y: number) {
-    if (tool === "point") addPoint(x, y);
+    if (tool === "point") addPoint(graph, listIds, x, y);
     // every other tool only connects existing points -- clicking empty space is a no-op
   }
 
   function handlePointerDown(e: PointerEvent<HTMLCanvasElement>) {
     const { x, y } = dataCoordsFromEvent(e);
     const hitDataRadius = (HIT_RADIUS_PX / WIDTH) * (VIEWPORT.xMax - VIEWPORT.xMin);
-    const freeHit = nearestPointId(graph, x, y, hitDataRadius, true);
+    const freeHit = nearestPointId(graph, listIds, x, y, hitDataRadius, true);
     if (freeHit) {
       dragRef.current = { id: freeHit, moved: false };
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -453,7 +581,7 @@ export function GeometryPanel() {
     }
     const { x, y } = dataCoordsFromEvent(e);
     const hitDataRadius = (HIT_RADIUS_PX / WIDTH) * (VIEWPORT.xMax - VIEWPORT.xMin);
-    const hit = nearestPointId(graph, x, y, hitDataRadius);
+    const hit = nearestPointId(graph, listIds, x, y, hitDataRadius);
     if (hit) handlePointClick(hit);
     else handleEmptyClick(x, y);
   }
@@ -470,7 +598,7 @@ export function GeometryPanel() {
     function redraw() {
       if (!ctx) return;
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
-      for (const id of graph.get<string[]>(OBJECT_LIST_CELL)) {
+      for (const id of graph.get<string[]>(listIds.objectList)) {
         if (graph.has(pointCellId(id))) {
           const p = graph.get<PointRecord>(pointCellId(id));
           const isFree = graph.role(pointCellId(id)) === "free";
@@ -597,6 +725,14 @@ export function GeometryPanel() {
       <div style={{ margin: "0.5rem 0" }}>
         <AlgebraView graph={graph} />
       </div>
+      {syncUrl && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <button type="button" onClick={handleSave}>
+            Save to gallery
+          </button>
+          {saveStatus && <p style={{ fontSize: "0.85rem", color: "#5b6b8c", margin: "0.25rem 0" }}>{saveStatus}</p>}
+        </div>
+      )}
     </div>
   );
 }

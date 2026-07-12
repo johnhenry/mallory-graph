@@ -1,9 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
+import { encodeGeometryState, type GeometryState } from "~/lib/geometry-state.ts";
+import { encodeLinked3DState, type Linked3DState } from "~/lib/linked3d-state.ts";
 import { encodeMultiGraphState, type MultiGraphState } from "~/lib/multi-graph-state.ts";
 import { encodeNotebookState, type NotebookState } from "~/lib/notebook-state.ts";
-import { deleteSavedGraph, getSavedGraph, listSavedGraphs, type SavedGraphSummary } from "~/lib/saved-graphs.ts";
+import { encodeOdeState, type OdeState } from "~/lib/ode-state.ts";
+import { encodeOdeSystemState, type OdeSystemState } from "~/lib/ode-system-state.ts";
+import { encodeRegressionState, type RegressionState } from "~/lib/regression-state.ts";
+import { encodeStatisticsState, type StatisticsState } from "~/lib/statistics-state.ts";
+import { encodeSystemState, type SystemState } from "~/lib/system-state.ts";
+import { deleteSavedGraph, getSavedGraph, listSavedGraphs, type SavedGraphKind, type SavedGraphState, type SavedGraphSummary } from "~/lib/saved-graphs.ts";
+
+/** One reopen-href builder per SavedGraphKind -- the tab-hosted kinds (ode/ode-system, regression/statistics/systems) add a `?tab=` search param so CategoryTabs selects the right sibling before that panel's own decoder ever sees the hash (see CategoryTabs.tsx's `syncSearchParam`). */
+const REOPEN_HREF: Record<SavedGraphKind, (state: SavedGraphState) => string> = {
+  multi: (state) => `/graphing#${encodeMultiGraphState(state as MultiGraphState)}`,
+  notebook: (state) => `/notes#${encodeNotebookState(state as NotebookState)}`,
+  geometry: (state) => `/geo#${encodeGeometryState(state as GeometryState)}`,
+  "surface-3d": (state) => `/3d#${encodeLinked3DState(state as Linked3DState)}`,
+  ode: (state) => `/calculus?tab=ode#${encodeOdeState(state as OdeState)}`,
+  "ode-system": (state) => `/calculus?tab=ode-system#${encodeOdeSystemState(state as OdeSystemState)}`,
+  regression: (state) => `/data?tab=regression#${encodeRegressionState(state as RegressionState)}`,
+  statistics: (state) => `/data?tab=statistics#${encodeStatisticsState(state as StatisticsState)}`,
+  systems: (state) => `/data?tab=systems#${encodeSystemState(state as SystemState)}`,
+};
 
 export const Route = createFileRoute("/_app/gallery")({
   component: GalleryPage,
@@ -43,11 +63,7 @@ function GalleryPage() {
       // A full navigation (not client-side routing) so the destination
       // route's mount-time hash read always runs fresh, rather than
       // depending on a hash-only change re-triggering it.
-      const href =
-        entry.kind === "notebook"
-          ? `/notes#${encodeNotebookState(state as NotebookState)}`
-          : `/graphing#${encodeMultiGraphState(state as MultiGraphState)}`;
-      window.location.href = href;
+      window.location.href = REOPEN_HREF[entry.kind](state);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

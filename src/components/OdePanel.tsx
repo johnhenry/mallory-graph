@@ -2,11 +2,13 @@ import type { Path2D } from "mallory-math";
 import { useEffect, useRef, useState } from "react";
 import { CellGraph } from "../lib/cell-graph.ts";
 import { useServerFn } from "@tanstack/react-start";
-import { cellIdsOde } from "../lib/cell-ids.ts";
+import { cellIdsOde, type CellIdsOde } from "../lib/cell-ids.ts";
 import { startOdeExportJob } from "../lib/export-ode-video.ts";
 import { VideoExportControls } from "./VideoExportControls.tsx";
 import { drawPath, drawSlopeField, type Viewport } from "../lib/render-path.ts";
 import { attemptOdeClosedForm, type OdeClosedFormAttempt, sampleOdeSolution, sampleSlopeField, type SlopeFieldPoint } from "../lib/sample-ode.ts";
+import { DEFAULT_ODE_STATE, decodeOdeState, encodeOdeState, type OdeState } from "../lib/ode-state.ts";
+import { saveGraph } from "../lib/saved-graphs.ts";
 import { useCellGraphTools } from "../hooks/use-cell-graph-tools.ts";
 import { useCell } from "../lib/use-cell.ts";
 import { CopyableTex } from "./CopyableTex.tsx";
@@ -17,28 +19,50 @@ type SlopeFieldResult = { ok: true; points: SlopeFieldPoint[] } | { ok: false; m
 const WIDTH = 500;
 const HEIGHT = 500;
 
-const DEFAULTS = { expr: "x - y", x0: "0", y0: "1", xMin: "-5", xMax: "5", yMin: "-5", yMax: "5" };
+/** Writes a state's fields onto `graph`'s free cells -- shared by useOdeGraph's own hydrate-from-hash and NotebookOdeBlock's post-mount overwrite (a notebook block can't pre-seed before this panel mounts, since that would skip its `graph.define` setup -- see the file's own useOdeGraph doc comment). */
+export function seedOdeState(graph: CellGraph, ids: CellIdsOde, state: OdeState): void {
+  graph.set(ids.expr, state.expr);
+  graph.set(ids.x0, state.x0);
+  graph.set(ids.y0, state.y0);
+  graph.set(ids.xMin, state.xMin);
+  graph.set(ids.xMax, state.xMax);
+  graph.set(ids.yMin, state.yMin);
+  graph.set(ids.yMax, state.yMax);
+}
+
+/** Builds the full serializable state of an ODE panel -- shared by the URL-sync effect and the save-to-gallery handler. */
+export function getCurrentOdeState(graph: CellGraph, ids: CellIdsOde): OdeState {
+  return {
+    v: 1,
+    expr: graph.get<string>(ids.expr),
+    x0: graph.get<string>(ids.x0),
+    y0: graph.get<string>(ids.y0),
+    xMin: graph.get<string>(ids.xMin),
+    xMax: graph.get<string>(ids.xMax),
+    yMin: graph.get<string>(ids.yMin),
+    yMax: graph.get<string>(ids.yMax),
+  };
+}
 
 /**
- * Sets up the ODE panel's reactive cells on its own private CellGraph -- an
- * f(x,y) expression plus an initial condition and a rectangular domain, a
- * different input shape from GraphCanvas's single expression + axis
- * variable, so (like SystemSolverPanel/StatisticsPanel) it isn't woven into
- * `cellIds`/`useExpressionGraph`.
+ * Sets up the ODE panel's reactive cells -- an f(x,y) expression plus an
+ * initial condition and a rectangular domain, a different input shape from
+ * GraphCanvas's single expression + axis variable, so (like
+ * SystemSolverPanel/StatisticsPanel) it isn't woven into
+ * `cellIds`/`useExpressionGraph`. Shares an `externalGraph` when supplied
+ * (e.g. a notebook block) instead of creating a private one, mirroring
+ * Graph3DCanvas's `useExpressionGraph3D` -- URL-hash hydration only applies
+ * to the standalone, private-graph case, since an external graph's owner
+ * (NotebookPanel) is responsible for its own seeding.
  */
-function useOdeGraph(cellId: string): CellGraph {
+function useOdeGraph(cellId: string, externalGraph?: CellGraph): CellGraph {
   const ref = useRef<CellGraph | null>(null);
   if (!ref.current) {
-    const graph = new CellGraph();
+    const graph = externalGraph ?? new CellGraph();
     const ids = cellIdsOde(cellId);
     if (!graph.has(ids.expr)) {
-      graph.set(ids.expr, DEFAULTS.expr);
-      graph.set(ids.x0, DEFAULTS.x0);
-      graph.set(ids.y0, DEFAULTS.y0);
-      graph.set(ids.xMin, DEFAULTS.xMin);
-      graph.set(ids.xMax, DEFAULTS.xMax);
-      graph.set(ids.yMin, DEFAULTS.yMin);
-      graph.set(ids.yMax, DEFAULTS.yMax);
+      const decoded = !externalGraph && typeof window !== "undefined" ? decodeOdeState(window.location.hash.slice(1)) : null;
+      seedOdeState(graph, ids, decoded ?? DEFAULT_ODE_STATE);
 
       const domain = () => ({
         xMin: Number(graph.get<string>(ids.xMin)),
@@ -89,12 +113,19 @@ function useOdeGraph(cellId: string): CellGraph {
 
 export interface OdePanelProps {
   cellId?: string;
+  /** Share an existing CellGraph (e.g. from a notebook block) instead of creating a private one. */
+  graph?: CellGraph;
+  /** Hydrate from and write to the URL fragment. Off for a notebook-embedded instance, whose document owns persistence instead. */
+  syncUrl?: boolean;
 }
 
 /** v1: a single first-order IVP dy/dx = f(x,y), y(x0) = y0, plotted against its slope field. No animation/dragging. */
-export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
-  const graph = useOdeGraph(cellId);
-  useCellGraphTools("calculus_ode", graph);
+export function OdePanel({ cellId = "ode-1", graph: externalGraph, syncUrl = true }: OdePanelProps = {}) {
+  const graph = useOdeGraph(cellId, externalGraph);
+  // Namespaced by cellId so two OdePanel instances sharing one CellGraph
+  // (e.g. a notebook with more than one embedded ODE block) don't collide on
+  // tool names, same fix as GraphCanvas's.
+  useCellGraphTools(`calculus_ode_${cellId}`, graph);
   const ids = cellIdsOde(cellId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -110,7 +141,40 @@ export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
   const closedForm = useCell<OdeClosedFormAttempt>(graph, ids.closedForm);
 
   const [exprInput, setExprInput] = useState(expr);
+  // Keeps the input box in sync when `ids.expr` changes for a reason other
+  // than typing in this same box -- e.g. URL-hash hydration seeding it
+  // after this component's own useState initializer already ran (mirrors
+  // GraphCanvas's identically-reasoned effect).
+  useEffect(() => {
+    setExprInput(expr);
+  }, [expr]);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const startOdeExportJobFn = useServerFn(startOdeExportJob);
+  const saveGraphFn = useServerFn(saveGraph);
+
+  async function handleSave() {
+    const title = window.prompt("Title for this saved ODE setup:", "Untitled");
+    if (title === null) return;
+    setSaveStatus("Saving…");
+    try {
+      await saveGraphFn({ data: { title, kind: "ode", state: getCurrentOdeState(graph, ids) } });
+      setSaveStatus(`Saved as "${title || "Untitled"}" — see the gallery to reopen it.`);
+    } catch (e) {
+      setSaveStatus(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Keep the URL fragment in sync with the live graph state, mirroring
+  // GraphCanvasMulti's writeUrl/subscribeAll pattern.
+  useEffect(() => {
+    if (!syncUrl) return;
+    function writeUrl() {
+      window.history.replaceState(null, "", `#${encodeOdeState(getCurrentOdeState(graph, ids))}`);
+    }
+    writeUrl();
+    return graph.subscribeAll(writeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, syncUrl]);
 
   function updateExpr(value: string) {
     setExprInput(value);
@@ -188,6 +252,16 @@ export function OdePanel({ cellId = "ode-1" }: OdePanelProps = {}) {
           })
         }
       />
+      {syncUrl && (
+        <div style={{ margin: "0.5rem 0" }}>
+          <button type="button" onClick={handleSave}>
+            Save to gallery
+          </button>
+          {saveStatus && (
+            <p style={{ fontSize: "0.85rem", color: "#5b6b8c", margin: "0.25rem 0" }}>{saveStatus}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
